@@ -3,7 +3,6 @@
     "id": "openai_default",
     "name": "OpenAI (GPT-4o / GPT-3.5)",
     "baseUrl": "https://api.openai.com",
-    "apiKey": "",
     "model": "gpt-3.5-turbo",
     "contextWindow": 16385,
     "formatType": "openai"
@@ -12,7 +11,6 @@
     "id": "anthropic_default",
     "name": "Anthropic (Claude 3.5 Sonnet)",
     "baseUrl": "https://api.anthropic.com",
-    "apiKey": "",
     "model": "claude-3-5-sonnet-20240620",
     "contextWindow": 200000,
     "formatType": "anthropic"

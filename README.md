@@ -1,34 +1,68 @@
-# Ghita PPT Converter - Flutter PowerPoint Creator
+# Ghita PPT Converter v0.0.1
 
-A Flutter application that allows you to create PowerPoint presentations with HTML content, advanced animations, and AI-powered code generation.
+Flutter application for creating PowerPoint presentations with HTML support and AI-powered content generation.
+
+## Version
+- **Current version:** `0.0.1+1`
+- **Git tag:** `v0.0.1`
 
 ## Features
 
-1. **HTML to PPT Conversion**: Write custom HTML/CSS for slides, convert to PowerPoint format
-2. **Enhanced Effects**: Advanced animation system with visual preview
-3. **AI Assistant**: Chat interface to generate presentation HTML code using OpenAI API
-4. **Windows Desktop Support**: Native Windows application
+1. **HTML to PPTX Conversion** — Write custom HTML/CSS for slides (bold, italic, headings, lists, line breaks preserved in output).
+2. **Slide Transition Effects** — Choose from 14 transition effects (fade, push, wipe, split, blinds, clock, zoom, etc.) applied per-export.
+3. **AI Assistant** — Chat interface to generate presentation HTML content using OpenAI or Anthropic APIs; API keys stored encrypted via `flutter_secure_storage`.
+4. **Windows Desktop** — Native Windows application.
 
 ## Project Structure
 
 ```
 lib/
-├── main.dart                   # Application entry point
+├── main.dart                           # App entry point
 ├── screens/
-│   ├── home_screen.dart        # Main navigation screen
-│   ├── html_to_ppt_screen.dart # HTML conversion interface
-│   ├── ai_chat_screen.dart     # AI chat integration
-│   └── effects_screen.dart     # Animation effects panel
+│   ├── home_screen.dart                # Bottom navigation with 3 tabs
+│   ├── html_to_ppt_screen.dart         # HTML editor + slide list + export
+│   ├── ai_chat_screen.dart             # AI chat with provider settings
+│   └── effects_screen.dart             # Slide transition effects panel
 ├── providers/
-│   ├── app_provider.dart       # App state management
-│   ├── presentation_state.dart # Presentation data model
-│   ├── ai_provider_manager.dart # Multi-provider AI manager
-│   └── config_service.dart      # Configuration persistence
+│   ├── app_provider.dart               # Tab navigation state
+│   ├── presentation_state.dart         # Slide list + effect + export logic
+│   ├── ai_provider_manager.dart        # AI provider CRUD + API calls
+│   └── config_service.dart             # Persistence (secure + SharedPreferences)
 └── services/
-    └── ppt_generator.dart      # PowerPoint generation logic
+    └── ppt_generator.dart              # PPTX ZIP archive builder
 assets/
-├── templates/                  # Presentation templates
-├── themes/                     # Theme configurations
-├── images/icons/               # Icons and graphics
-└── config/                     # Configuration files
-    └── providers.json          # AI provider configuration
+├── config/
+│   └── providers.json                  # AI provider templates (no API keys)
+└── images/
+    └── app_logo.png
+test/
+├── widget_test.dart                    # Boilerplate (replace with real tests)
+└── ppt_generator_test.dart             # Real tests for PPTGenerator
+```
+
+## Getting Started
+
+### Prerequisites
+- Flutter SDK >= 3.0.0
+- Dart SDK >= 3.0.0
+
+### Setup
+```bash
+flutter pub get
+```
+
+### Running
+```bash
+flutter run -d windows
+```
+
+### Running Tests
+```bash
+flutter test
+```
+
+## Security Note
+API keys for AI providers are stored using `flutter_secure_storage` (encrypted keychain on each platform). No API keys are written to `SharedPreferences` or committed to version control.
+
+## License
+MIT (or your preferred license).

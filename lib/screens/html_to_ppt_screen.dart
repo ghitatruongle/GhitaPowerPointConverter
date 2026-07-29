@@ -22,12 +22,36 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
   }
 
   Future<void> _addSlideFromHtml() async {
-    if (_htmlController.text.trim().isEmpty) return;
+    final rawHtml = _htmlController.text.trim();
+    if (rawHtml.isEmpty) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('HTML content cannot be empty.')),
+      );
+      return;
+    }
+    if (rawHtml.length > 100000) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('HTML content is too long (max 100KB).')),
+      );
+      return;
+    }
+    // Strip dangerous tags (script, iframe, object, embed)
+    final sanitizedHtml = rawHtml
+        .replaceAll(RegExp(r'<script[\s\S]*?<\/script>', caseSensitive: false), '')
+        .replaceAll(RegExp(r'<iframe[\s\S]*?<\/iframe>', caseSensitive: false), '')
+        .replaceAll(RegExp(r'<object[\s\S]*?<\/object>', caseSensitive: false), '')
+        .replaceAll(RegExp(r'<embed[\s\S]*?\/>', caseSensitive: false), '');
+    if (sanitizedHtml.trim().isEmpty) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('HTML contains only blocked elements.')),
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 
     try {
-      final document = html_parser.parse(_htmlController.text);
+      final document = html_parser.parse(sanitizedHtml);
       String title = _titleController.text.trim();
       
       // Auto-extract title from <h1> if available
@@ -40,7 +64,7 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
 
       final slideMap = {
         'title': title,
-        'htmlContent': _htmlController.text,
+        'htmlContent': sanitizedHtml,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       };
 

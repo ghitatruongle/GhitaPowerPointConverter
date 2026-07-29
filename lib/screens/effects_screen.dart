@@ -11,16 +11,24 @@ class EffectsScreen extends StatefulWidget {
 }
 
 class _EffectsScreenState extends State<EffectsScreen> {
-  final List<String> _availableAnimations = [
-    'Fade In',
-    'Slide In Left',
-    'Slide In Right',
-    'Scale In',
-    'Rotate In',
-    'Bounce In',
+  final List<SlideEffect> _availableEffects = [
+    SlideEffect.none,
+    SlideEffect.fade,
+    SlideEffect.pushLeft,
+    SlideEffect.pushRight,
+    SlideEffect.pushUp,
+    SlideEffect.pushDown,
+    SlideEffect.wipe,
+    SlideEffect.splitIn,
+    SlideEffect.splitOut,
+    SlideEffect.randomBar,
+    SlideEffect.checkerboard,
+    SlideEffect.blinds,
+    SlideEffect.clock,
+    SlideEffect.zoom,
   ];
 
-  String _selectedAnimation = 'Fade In';
+  SlideEffect _selectedEffect = SlideEffect.none;
   double _animationDuration = 1.0;
   bool _enableLoop = false;
 
@@ -58,7 +66,7 @@ class _EffectsScreenState extends State<EffectsScreen> {
                   const SizedBox(height: 8),
                   DropdownButton<String>(
                     isExpanded: true,
-                    value: _selectedAnimation,
+                    value: _selectedEffect.name,
                     items: _availableAnimations.map((String value) {
                       return DropdownMenuItem(
                         value: value,
@@ -67,7 +75,7 @@ class _EffectsScreenState extends State<EffectsScreen> {
                     }).toList(),
                     onChanged: (String? newValue) {
                       if (newValue != null) {
-                        setState(() => _selectedAnimation = newValue);
+                        setState(() => _selectedEffect.name = newValue);
                       }
                     },
                   ),
@@ -127,9 +135,9 @@ class _EffectsScreenState extends State<EffectsScreen> {
 
                   ElevatedButton.icon(
                     onPressed: () {
-                      presentationState.setTheme(_selectedAnimation);
+                      presentationState.setEffect(_selectedEffect);
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Applied "$_selectedAnimation" effect to presentation!')),
+                        SnackBar(content: Text('Applied effect to presentation!')),
                       );
                     },
                     icon: const Icon(Icons.check_circle_outline),
@@ -179,14 +187,14 @@ class _EffectsScreenState extends State<EffectsScreen> {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        '$_selectedAnimation Effect',
+        '$_selectedEffect.name Effect',
         style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
       ),
     );
 
     Animate animate;
 
-    switch (_selectedAnimation) {
+    switch (_selectedEffect.name) {
       case 'Fade In':
         animate = textWidget.animate(onComplete: _enableLoop ? (controller) => controller.repeat(reverse: true) : null).fadeIn(duration: duration);
         break;
