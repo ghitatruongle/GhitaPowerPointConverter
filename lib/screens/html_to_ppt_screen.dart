@@ -8,6 +8,7 @@ import '../services/template_service.dart';
 import '../models/slide_template.dart';
 import 'present_screen.dart';
 import 'widgets/slide_preview.dart';
+import 'widgets/wysiwyg_toolbar.dart';
 
 class HtmlToPPTScreen extends StatefulWidget {
   const HtmlToPPTScreen({super.key});
@@ -58,6 +59,22 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
       if (!mounted) return;
       setState(() => _previewHtml = _htmlController.text);
     });
+  }
+
+  void _insertHtmlTag(String open, String close) {
+    final text = _htmlController.text;
+    final selection = _htmlController.selection;
+    if (selection.isValid && selection.start >= 0 && selection.end <= text.length) {
+      final selectedText = text.substring(selection.start, selection.end);
+      final replacement = '$open$selectedText$close';
+      final newText = text.replaceRange(selection.start, selection.end, replacement);
+      _htmlController.text = newText;
+      _htmlController.selection = TextSelection.collapsed(
+        offset: selection.start + open.length + selectedText.length,
+      );
+    } else {
+      _htmlController.text = '$text$open$close';
+    }
   }
 
   // ---- Input Validation ----
@@ -631,20 +648,25 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
                         child: Card(
                           child: Padding(
                             padding: const EdgeInsets.all(8.0),
-                            child: Stack(
+                            child: Column(
                               children: [
-                                TextFormField(
-                                  controller: _htmlController,
-                                  maxLines: null,
-                                  expands: true,
-                                  decoration: const InputDecoration(
-                                    labelText: 'HTML Content',
-                                    border: InputBorder.none,
-                                    hintText:
-                                        '<h1>Title</h1><p>Content...</p><ul><li>Item</li></ul>',
-                                  ),
-                                  keyboardType: TextInputType.multiline,
-                                ),
+                                WysiwygToolbar(onInsertTag: _insertHtmlTag),
+                                const Divider(height: 12),
+                                Expanded(
+                                  child: Stack(
+                                    children: [
+                                      TextFormField(
+                                        controller: _htmlController,
+                                        maxLines: null,
+                                        expands: true,
+                                        decoration: const InputDecoration(
+                                          labelText: 'HTML Content',
+                                          border: InputBorder.none,
+                                          hintText:
+                                              '<h1>Title</h1><p>Content...</p><ul><li>Item</li></ul>',
+                                        ),
+                                        keyboardType: TextInputType.multiline,
+                                      ),
                                 if (_isLoading)
                                   Positioned.fill(
                                     child: Container(
@@ -653,6 +675,9 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
                                           child: CircularProgressIndicator()),
                                     ),
                                   ),
+                              ],
+                                  ),
+                                ),
                               ],
                             ),
                           ),

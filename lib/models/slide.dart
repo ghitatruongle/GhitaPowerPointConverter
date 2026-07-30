@@ -34,13 +34,35 @@ class Slide {
   /// Creation timestamp used as a stable list key in the UI.
   final int timestamp;
 
+  /// Per-slide background color override (hex e.g. #FFFFFF or data-bg-color).
+  final String? bgColor;
+
+  /// Custom inline CSS style overrides for this specific slide.
+  final String? customCss;
+
+  /// Layout structure classification (e.g. 'standard', 'grid2', 'grid3', 'hero', 'quote', 'kpi').
+  final String layoutType;
+
+  /// Tags associated with the slide (e.g. ['intro', 'chart', 'summary']).
+  final List<String> tags;
+
+  /// Visual elements metadata for Drag-and-Drop overlay editing.
+  final Map<String, dynamic> visualElements;
+
   Slide({
     required this.title,
     required this.htmlContent,
     this.notes = '',
     this.effect,
     int? timestamp,
-  }) : timestamp = timestamp ?? DateTime.now().millisecondsSinceEpoch;
+    this.bgColor,
+    this.customCss,
+    this.layoutType = 'standard',
+    List<String>? tags,
+    Map<String, dynamic>? visualElements,
+  })  : timestamp = timestamp ?? DateTime.now().millisecondsSinceEpoch,
+        tags = tags ?? const [],
+        visualElements = visualElements ?? const {};
 
   Slide copyWith({
     String? title,
@@ -49,6 +71,11 @@ class Slide {
     SlideEffect? effect,
     bool clearEffect = false,
     int? timestamp,
+    String? bgColor,
+    String? customCss,
+    String? layoutType,
+    List<String>? tags,
+    Map<String, dynamic>? visualElements,
   }) {
     return Slide(
       title: title ?? this.title,
@@ -56,6 +83,11 @@ class Slide {
       notes: notes ?? this.notes,
       effect: clearEffect ? null : (effect ?? this.effect),
       timestamp: timestamp ?? this.timestamp,
+      bgColor: bgColor ?? this.bgColor,
+      customCss: customCss ?? this.customCss,
+      layoutType: layoutType ?? this.layoutType,
+      tags: tags ?? this.tags,
+      visualElements: visualElements ?? this.visualElements,
     );
   }
 
@@ -66,6 +98,11 @@ class Slide {
       if (notes.isNotEmpty) 'notes': notes,
       if (effect != null) 'effect': effect!.name,
       'timestamp': timestamp,
+      if (bgColor != null) 'bgColor': bgColor,
+      if (customCss != null) 'customCss': customCss,
+      'layoutType': layoutType,
+      if (tags.isNotEmpty) 'tags': tags,
+      if (visualElements.isNotEmpty) 'visualElements': visualElements,
     };
   }
 
@@ -79,6 +116,18 @@ class Slide {
         effect = null;
       }
     }
+    final rawTags = map['tags'];
+    final tagsList = rawTags is List
+        ? rawTags.map((e) => e.toString()).toList()
+        : <String>[];
+
+    final rawVisual = map['visualElements'];
+    final visualMap = rawVisual is Map<String, dynamic>
+        ? rawVisual
+        : (rawVisual is Map
+            ? Map<String, dynamic>.from(rawVisual)
+            : <String, dynamic>{});
+
     return Slide(
       title: (map['title'] ?? 'Untitled Slide').toString(),
       htmlContent: (map['htmlContent'] ?? '').toString(),
@@ -87,6 +136,11 @@ class Slide {
       timestamp: map['timestamp'] is int
           ? map['timestamp'] as int
           : DateTime.now().millisecondsSinceEpoch,
+      bgColor: map['bgColor']?.toString(),
+      customCss: map['customCss']?.toString(),
+      layoutType: map['layoutType']?.toString() ?? 'standard',
+      tags: tagsList,
+      visualElements: visualMap,
     );
   }
 }

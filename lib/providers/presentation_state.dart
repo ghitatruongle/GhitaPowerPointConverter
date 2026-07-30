@@ -5,6 +5,9 @@ import '../models/slide.dart';
 import '../services/ppt_generator.dart';
 import '../services/html_export_service.dart';
 import '../services/pdf_export_service.dart';
+import '../services/smart_draft_manager.dart';
+import '../services/time_machine_history_service.dart';
+import '../services/project_bundle_service.dart';
 import 'config_service.dart';
 
 // SlideEffect moved to models/slide.dart in 0.3.0; re-export so existing
@@ -14,12 +17,22 @@ export '../models/slide.dart' show Slide, SlideEffect;
 class PresentationState with ChangeNotifier {
   List<Slide> _slides = [];
   SlideEffect _slideEffect = SlideEffect.none;
+  String _aspectRatio = '16:9';
+  String _presentationTitle = 'Dự Án Thuyết Trình';
   String? exportStatus;
   String? lastExportedPath;
+
   final ConfigService _configService = ConfigService();
+  final SmartDraftManager _smartDraftManager = SmartDraftManager();
+  final TimeMachineHistoryService _historyService = TimeMachineHistoryService();
+  final ProjectBundleService _bundleService = ProjectBundleService();
 
   List<Slide> get slides => _slides;
   SlideEffect get slideEffect => _slideEffect;
+  String get aspectRatio => _aspectRatio;
+  String get presentationTitle => _presentationTitle;
+  bool get canUndo => _historyService.canUndo;
+  bool get canRedo => _historyService.canRedo;
 
   /// Backward-compatible alias: returns effect name as string.
   String get currentTheme => _slideEffect.name;
@@ -28,10 +41,69 @@ class PresentationState with ChangeNotifier {
     loadPresentation();
   }
 
+  // ---- History Undo/Redo ----
+
+  void undo() {
+    final previous = _historyService.undo();
+    if (previous != null) {
+      _slides = previous.map((s) => s.copyWith()).toList();
+      notifyListeners();
+      savePresentation('Undo');
+    }
+  }
+
+  void redo() {
+    final next = _historyService.redo();
+    if (next != null) {
+      _slides = next.map((s) => s.copyWith()).toList();
+      notifyListeners();
+      savePresentation('Redo');
+    }
+  }
+
+  void _recordHistory(String action) {
+    _historyService.recordSnapshot(action, _slides);
+  }
+
+  // ---- Project Bundle (.ghita) ----
+
+  Future<bool> saveProjectToFile(String targetPath) async {
+    final success = await _bundleService.saveProjectBundle(
+      targetPath: targetPath,
+      slides: _slides,
+      title: _presentationTitle,
+      aspectRatio: _aspectRatio,
+    );
+    if (success) {
+      // PURGE temporary draft from sandbox after official save
+      await _smartDraftManager.purgeDraft();
+    }
+    return success;
+  }
+
+  Future<bool> loadProjectFromFile(String sourcePath) async {
+    final data = await _bundleService.loadProjectBundle(sourcePath);
+    if (data != null) {
+      _slides = data['slides'] as List<Slide>;
+      final manifest = data['manifest'] as Map<String, dynamic>?;
+      if (manifest != null) {
+        _presentationTitle = (manifest['title'] ?? 'Dự Án Thuyết Trình').toString();
+        _aspectRatio = (manifest['aspectRatio'] ?? '16:9').toString();
+      }
+      _historyService.clear();
+      _recordHistory('Loaded Project');
+      notifyListeners();
+      await savePresentation();
+      return true;
+    }
+    return false;
+  }
+
   // ---- Slide CRUD ----
 
   void addSlide(Slide slide) {
     _slides.add(slide);
+    _recordHistory('Thêm Slide mới');
     notifyListeners();
     savePresentation();
   }

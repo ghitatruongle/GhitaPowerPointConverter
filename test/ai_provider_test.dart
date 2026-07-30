@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ghita_ppt_converter/providers/ai_provider_manager.dart';
+import 'package:ghita_ppt_converter/services/api_fallback_cascade_service.dart';
 
 void main() {
   group('parseStreamLine - OpenAI format', () {
@@ -124,6 +125,21 @@ void main() {
       final p = AIProviderConfig.defaultProvider()
           .copyWith(baseUrl: 'not-a-url');
       expect(AIProviderManager.validateProvider(p), isNotNull);
+    });
+
+    test('executeWithFallback cascades when first provider fails', () async {
+      final cascadeService = APIFallbackCascadeService();
+      final p1 = AIProviderConfig.defaultProvider().copyWith(name: 'Provider 1');
+      final p2 = AIProviderConfig.defaultProvider().copyWith(name: 'Provider 2');
+
+      final result = await cascadeService.executeWithFallback([p1, p2], (config) async {
+        if (config.name == 'Provider 1') {
+          throw Exception('P1 network timeout');
+        }
+        return 'Success from ${config.name}';
+      });
+
+      expect(result, 'Success from Provider 2');
     });
   });
 }

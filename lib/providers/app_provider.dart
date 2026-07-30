@@ -24,13 +24,17 @@ class AppProvider with ChangeNotifier {
   String get currentScreenName {
     switch (_currentIndex) {
       case 0:
-        return 'HTML to PPT';
+        return 'Editor & Presenter';
       case 1:
-        return 'AI Chat';
+        return 'Quản Lý Dự Án (.ghita)';
       case 2:
-        return 'Effects';
+        return 'Template Studio';
+      case 3:
+        return 'AI Pitch Deck Copilot';
+      case 4:
+        return 'Cài Đặt Hệ Thống';
       default:
-        return 'HTML to PPT';
+        return 'Ghita PPT Ultimate';
     }
   }
 

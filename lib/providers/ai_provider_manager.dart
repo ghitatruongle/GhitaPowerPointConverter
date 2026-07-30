@@ -246,6 +246,61 @@ class AIProviderManager with ChangeNotifier {
     }
   }
 
+  /// Automatically fetches the list of available models from the provider endpoint (/v1/models or Gemini API).
+  Future<List<String>> fetchAvailableModels(AIProviderConfig config) async {
+    try {
+      final List<String> fetchedModels = [];
+      if (config.formatType == 'gemini') {
+        final url = Uri.parse('${config.baseUrl}/v1beta/models?key=${config.apiKey}');
+        final res = await http.get(url).timeout(const Duration(seconds: 5));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          if (data['models'] is List) {
+            for (final m in data['models']) {
+              final name = (m['name'] ?? '').toString().replaceAll('models/', '');
+              if (name.isNotEmpty) fetchedModels.add(name);
+            }
+          }
+        }
+      } else {
+        final url = Uri.parse('${config.baseUrl}/v1/models');
+        final headers = <String, String>{'Content-Type': 'application/json'};
+        if (config.apiKey.isNotEmpty) {
+          if (config.formatType == 'anthropic') {
+            headers['x-api-key'] = config.apiKey;
+            headers['anthropic-version'] = '2023-06-01';
+          } else {
+            headers['Authorization'] = 'Bearer ${config.apiKey}';
+          }
+        }
+        final res = await http.get(url, headers: headers).timeout(const Duration(seconds: 5));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          if (data['data'] is List) {
+            for (final m in data['data']) {
+              final id = (m['id'] ?? '').toString();
+              if (id.isNotEmpty) fetchedModels.add(id);
+            }
+          }
+        }
+      }
+
+      if (fetchedModels.isNotEmpty) {
+        final updated = config.copyWith(
+          availableModels: fetchedModels,
+          selectedModel: fetchedModels.contains(config.selectedModel)
+              ? config.selectedModel
+              : fetchedModels.first,
+        );
+        updateProvider(updated);
+        return fetchedModels;
+      }
+    } catch (e) {
+      debugPrint('Error fetching models: $e');
+    }
+    return config.availableModels;
+  }
+
   void addProvider(AIProviderConfig newProvider) {
     _providers.add(newProvider);
     if (_selectedProvider == null) {
@@ -394,6 +449,27 @@ class AIProviderManager with ChangeNotifier {
       }
     } catch (e) {
       throw Exception('Failed to generate HTML: $e');
+    }
+  }
+
+  /// Generate slide content with an optional custom system prompt.
+  Future<String> generateSlideContent(String prompt, {String? customPrompt}) async {
+    final provider = _ensureReady();
+    final sysPrompt = customPrompt ?? _systemPrompt;
+
+    try {
+      switch (provider.formatType) {
+        case 'openai':
+          return await _callOpenAI(provider, prompt);
+        case 'anthropic':
+          return await _callAnthropic(provider, prompt);
+        case 'gemini':
+          return await _callGemini(provider, prompt, sysPrompt);
+        default:
+          return await _callOpenAI(provider, prompt);
+      }
+    } catch (e) {
+      throw Exception('Failed to generate slide content: $e');
     }
   }
 

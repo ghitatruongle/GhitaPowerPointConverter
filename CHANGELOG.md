@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.7.0] - 2026-07-30 — Ultimate AI Studio & Presentation Platform (BƯỚC NHẢY VỌT LỊCH SỬ)
+
+### 🛡️ Smart Auto-Save & PowerPoint-Style Storage Purge
+- **Unsaved Draft Sandbox (`SmartDraftManager`)**: Background draft auto-saves every 3-5 seconds when working on unsaved projects. Zero data loss on unexpected shutdowns or power cuts.
+- **Automatic Temp Draft Purging**: As soon as the presentation is saved to an official `.ghita` file path, temporary sandbox drafts are automatically purged to prevent disk clutter and conserve storage.
+- **Multi-Asset `.ghita` Project Bundles (`ProjectBundleService`)**: Standardized ZIP container packing `manifest.json`, `slides.json`, `history.json`, and offline media assets (`media/`).
+- **Time Machine History & Undo/Redo (`TimeMachineHistoryService`)**: History snapshot tree, diff comparison, and 1-click snapshot restore.
+
+### ⚙️ Dedicated Settings Tab & AI Provider Super-Hub
+- **Settings Screen (`SettingsScreen`)**: Centralized hub managing Light/Dark/System theme, API Key Vault, Editor Preferences, Keyboard Shortcuts Remap, and 1-Click Backup/Restore JSON.
+- **Provider Connection Wizard (`ProviderSettingsScreen`)**: Diagnostic Ping Latency (ms), Auto-Fetch Available Models API (`GET /v1/models`), and Multi-Key Rotation.
+- **Local AI Auto-Discovery (`LocalAIDetectorService`)**: 1-Click auto-discovery for running local AI endpoints (Ollama `:11434`, LM Studio `:1234`, vLLM `:8000`).
+
+### 🎨 Visual & HTML Hybrid Studio
+- **WYSIWYG Toolbar (`WysiwygToolbar`)**: Inline visual text formatting (Bold, Italic, Underline, Headers, Lists, Tables, Callout boxes, Code blocks) without typing raw HTML manually.
+- **Per-Slide AI Assistant (`SlideAiToolsDialog`)**: Slide-level AI toolbar for Rewrite & Polish, Speaker Notes Script Generation, and 20+ Languages Translation.
+- **Template Studio (`TemplateStudioScreen`)**: Thư viện Theme phong cách đa dạng (Business Executive, Modern Dark, Academic Gold, Creative Pitch, Minimal Slate).
+
+### 🎙️ Diễn Giả & Local Broadcaster
+- **Wi-Fi Live Presentation Broadcaster (`WifiBroadcasterService`)**: Broadcast live presentation slides over local Wi-Fi to audience mobile devices via HTTP server & QR Code.
+- **Recent Projects Hub (`RecentProjectsScreen`)**: Grid/List project management with search and hashtag tagging.
+
+### ⚡ Navigation & Shortcuts
+- **Command Palette (`CommandPaletteDialog`)**: `Ctrl + K` quick action launcher modal.
+- **Shortcuts Cheat Sheet (`ShortcutsHelpDialog`)**: `Ctrl + /` keyboard shortcuts reference.
+- Modern 5-destination NavigationBar: Editor, Projects, Templates, AI Chat, Settings.
+
 ## [0.3.0] - 2026-07-30 — Siêu cập nhật (Mega Update)
 
 ### 🧱 Typed Slide Model
