@@ -35,61 +35,57 @@ class _AiChatScreenState extends State<AiChatScreen> {
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
-              child: Column(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'AI Presentation Assistant',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.edit_note),
-                        tooltip: 'System Prompt',
-                        onPressed: _showSystemPromptEditor,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.settings),
-                        tooltip: 'Provider Settings',
-                        onPressed: _showProviderSettings,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (selectedProvider != null)
-                    Row(
+                  Expanded(
+                    child: Row(
                       children: [
-                        Icon(
-                          selectedProvider.apiKey.isNotEmpty
-                              ? Icons.check_circle
-                              : Icons.warning_amber_rounded,
-                          size: 18,
-                          color: selectedProvider.apiKey.isNotEmpty
-                              ? Colors.green
-                              : Colors.orange,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Provider: ${selectedProvider.name} (${selectedProvider.model})',
-                            style:
-                                TextStyle(fontSize: 12, color: Colors.grey[800]),
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                          child: Icon(
+                            selectedProvider != null &&
+                                    selectedProvider.formatType == 'anthropic'
+                                ? Icons.smart_toy_outlined
+                                : Icons.psychology_outlined,
+                            color: Theme.of(context).colorScheme.primary,
+                            size: 20,
                           ),
                         ),
-                        if (selectedProvider.apiKey.isEmpty)
-                          TextButton(
-                            onPressed: _showProviderSettings,
-                            child: const Text('Enter API Key',
-                                style: TextStyle(fontSize: 11)),
-                          )
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'AI Assistant',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              if (selectedProvider != null)
+                                Text(
+                                  '${selectedProvider.name} · ${selectedProvider.selectedModel}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                       ],
-                    )
-                  else
-                    const Text('No provider selected',
-                        style: TextStyle(color: Colors.red)),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.edit_note),
+                    tooltip: 'System Prompt',
+                    onPressed: _showSystemPromptEditor,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.settings),
+                    tooltip: 'Provider Settings',
+                    onPressed: _showProviderSettings,
+                  ),
                 ],
               ),
             ),
@@ -120,33 +116,26 @@ class _AiChatScreenState extends State<AiChatScreen> {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: isUser
-                                ? Theme.of(context)
-                                    .colorScheme
-                                    .primaryContainer
-                                : Colors.grey.shade100,
+                                ? Theme.of(context).colorScheme.primaryContainer
+                                : Theme.of(context).colorScheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: isUser
-                                  ? Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withValues(alpha: 0.3)
-                                  : Colors.grey.shade300,
+                                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.3)
+                                  : Theme.of(context).colorScheme.outlineVariant,
                             ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                isUser
-                                    ? 'You:'
-                                    : '${selectedProvider?.name ?? 'AI'}:',
+                                isUser ? 'You' : (selectedProvider?.name ?? 'AI'),
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                   color: isUser
                                       ? Theme.of(context).colorScheme.primary
-                                      : Colors.grey[700],
+                                      : Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                               const SizedBox(height: 4),
@@ -193,7 +182,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
                                           avatar: const Icon(
                                               Icons.add_circle_outline,
                                               size: 16),
-                                          label: Text('Add All ($slides.length)',
+                                          label: Text('Add All (${slides.length})',
                                               style:
                                                   const TextStyle(fontSize: 11)),
                                           onPressed: () {
@@ -264,44 +253,37 @@ class _AiChatScreenState extends State<AiChatScreen> {
           const SizedBox(height: 16),
 
           // Input section
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _messageController,
-                  decoration: InputDecoration(
-                    hintText:
-                        'Describe presentation topic or HTML slide content...',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    suffixIcon: _isGenerating
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : IconButton(
-                            icon: const Icon(Icons.send),
-                            onPressed: () async {
-                              final text = _messageController.text.trim();
-                              if (text.isNotEmpty && !_isGenerating) {
-                                _messageController.clear();
-                                await _generateHtmlForPresentation(text);
-                              }
-                            },
-                          ),
-                  ),
-                  onSubmitted: (text) async {
-                    final trimmed = text.trim();
-                    if (trimmed.isNotEmpty && !_isGenerating) {
-                      _messageController.clear();
-                      await _generateHtmlForPresentation(trimmed);
-                    }
-                  },
-                ),
+          TextField(
+            controller: _messageController,
+            decoration: InputDecoration(
+              hintText: 'Describe presentation topic or HTML slide content...',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
-            ],
+              suffixIcon: _isGenerating
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.send),
+                      onPressed: () async {
+                        final text = _messageController.text.trim();
+                        if (text.isNotEmpty && !_isGenerating) {
+                          _messageController.clear();
+                          await _generateHtmlForPresentation(text);
+                        }
+                      },
+                    ),
+            ),
+            onSubmitted: (text) async {
+              final trimmed = text.trim();
+              if (trimmed.isNotEmpty && !_isGenerating) {
+                _messageController.clear();
+                await _generateHtmlForPresentation(trimmed);
+              }
+            },
           ),
         ],
       ),
@@ -314,8 +296,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.chat_bubble_outline,
-              size: 64,
-              color: Theme.of(context).colorScheme.outline),
+              size: 64, color: Theme.of(context).colorScheme.outline),
           const SizedBox(height: 16),
           Text(
             'AI Presentation Assistant',
@@ -344,7 +325,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
     });
 
     try {
-      // Detect if user wants multiple slides (must have action + number + slides)
+      // Detect if user wants multiple slides
       final multiSlideMatch =
           RegExp(r'(?:create|generate|make|write)\s+(\d+)\s*(?:slide|presentation|topic)s?',
                   caseSensitive: false)
@@ -456,133 +437,221 @@ class _AiChatScreenState extends State<AiChatScreen> {
     final currentProvider =
         manager.selectedProvider ?? AIProviderConfig.defaultProvider();
     final apiKeyController = TextEditingController(text: currentProvider.apiKey);
-    final modelController = TextEditingController(text: currentProvider.model);
+    final nameController = TextEditingController(text: currentProvider.name);
     final baseUrlController =
         TextEditingController(text: currentProvider.baseUrl);
     final temperatureController = TextEditingController(
         text: currentProvider.temperature.toStringAsFixed(1));
     final maxTokensController = TextEditingController(
         text: currentProvider.maxTokens.toString());
+    final models = List<String>.from(currentProvider.availableModels);
+    String selectedModel = currentProvider.selectedModel;
+    String newModelInput = '';
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('AI Provider Settings'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              DropdownButtonFormField<AIProviderConfig>(
-                initialValue: manager.providers.contains(manager.selectedProvider)
-                    ? manager.selectedProvider
-                    : manager.providers.first,
-                decoration:
-                    const InputDecoration(labelText: 'Select Active Provider'),
-                items: manager.providers.map((provider) {
-                  return DropdownMenuItem(
-                    value: provider,
-                    child: Text(provider.name),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('AI Provider Settings'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Provider Name',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: baseUrlController,
+                  decoration: const InputDecoration(
+                    labelText: 'Base URL',
+                    hintText: 'https://api.openai.com',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: models.contains(selectedModel) ? selectedModel : models.first,
+                  decoration: const InputDecoration(
+                    labelText: 'Active Model',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: models.map((m) {
+                    return DropdownMenuItem(value: m, child: Text(m));
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(() => selectedModel = val);
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                const Text('Available Models:',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    ...models.map((m) {
+                      final isActive = m == selectedModel;
+                      return Chip(
+                        label: Text(m,
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: isActive
+                                    ? Colors.white
+                                    : Theme.of(context).colorScheme.onSurface)),
+                        backgroundColor: isActive
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.surfaceContainerHighest,
+                        deleteIcon: Icon(Icons.close, size: 14,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        onDeleted: () {
+                          if (models.length <= 1) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text(
+                                      'Provider must have at least 1 model.')),
+                            );
+                            return;
+                          }
+                          setDialogState(() {
+                            models.remove(m);
+                            if (selectedModel == m) {
+                              selectedModel = models.first;
+                            }
+                          });
+                        },
+                      );
+                    }),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'Add new model',
+                          hintText: 'e.g. gpt-4-turbo',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        onChanged: (val) => newModelInput = val.trim(),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline),
+                      tooltip: 'Add model',
+                      onPressed: () {
+                        final trimmed = newModelInput.trim();
+                        if (trimmed.isEmpty) return;
+                        if (models.any((m) => m.toLowerCase() == trimmed.toLowerCase())) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('"$trimmed" already exists.')),
+                          );
+                          return;
+                        }
+                        setDialogState(() {
+                          models.add(trimmed);
+                          selectedModel = trimmed;
+                          newModelInput = '';
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: apiKeyController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'API Key',
+                    hintText: 'sk-...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: temperatureController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Temperature (0.0 - 2.0)',
+                    hintText: '0.7',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: maxTokensController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Max Tokens',
+                    hintText: '4096',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                apiKeyController.dispose();
+                nameController.dispose();
+                baseUrlController.dispose();
+                temperatureController.dispose();
+                maxTokensController.dispose();
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final temperature =
+                    double.tryParse(temperatureController.text.trim()) ?? 0.7;
+                final maxTokens =
+                    int.tryParse(maxTokensController.text.trim()) ?? 4096;
+                if (models.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('Provider must have at least 1 model.')),
                   );
-                }).toList(),
-                onChanged: (provider) {
-                  if (provider != null) {
-                    manager.selectProvider(provider);
-                    apiKeyController.text = provider.apiKey;
-                    modelController.text = provider.model;
-                    baseUrlController.text = provider.baseUrl;
-                    temperatureController.text =
-                        provider.temperature.toStringAsFixed(1);
-                    maxTokensController.text = provider.maxTokens.toString();
-                  }
-                },
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: apiKeyController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'API Key',
-                  hintText: 'sk-...',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: modelController,
-                decoration: const InputDecoration(
-                  labelText: 'Model Name',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: baseUrlController,
-                decoration: const InputDecoration(
-                  labelText: 'Base URL',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: temperatureController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Temperature (0.0 - 2.0)',
-                  hintText: '0.7',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: maxTokensController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Max Tokens',
-                  hintText: '4096',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
+                  return;
+                }
+                if (!models.contains(selectedModel)) {
+                  selectedModel = models.first;
+                }
+                final updated = currentProvider.copyWith(
+                  name: nameController.text.trim(),
+                  baseUrl: baseUrlController.text.trim(),
+                  apiKey: apiKeyController.text.trim(),
+                  availableModels: models,
+                  selectedModel: selectedModel,
+                  temperature: temperature.clamp(0.0, 2.0),
+                  maxTokens: maxTokens.clamp(1, 128000),
+                );
+                manager.updateProvider(updated);
+                apiKeyController.dispose();
+                nameController.dispose();
+                baseUrlController.dispose();
+                temperatureController.dispose();
+                maxTokensController.dispose();
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Provider settings saved!')),
+                );
+              },
+              child: const Text('Save Settings'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              apiKeyController.dispose();
-              modelController.dispose();
-              baseUrlController.dispose();
-              temperatureController.dispose();
-              maxTokensController.dispose();
-              Navigator.pop(context);
-            },
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final temperature = double.tryParse(temperatureController.text.trim()) ?? 0.7;
-              final maxTokens = int.tryParse(maxTokensController.text.trim()) ?? 4096;
-              final updated = currentProvider.copyWith(
-                apiKey: apiKeyController.text.trim(),
-                model: modelController.text.trim(),
-                baseUrl: baseUrlController.text.trim(),
-                temperature: temperature.clamp(0.0, 2.0),
-                maxTokens: maxTokens.clamp(1, 128000),
-              );
-              manager.updateProvider(updated);
-              apiKeyController.dispose();
-              modelController.dispose();
-              baseUrlController.dispose();
-              temperatureController.dispose();
-              maxTokensController.dispose();
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Provider settings saved!')),
-              );
-            },
-            child: const Text('Save Settings'),
-          ),
-        ],
       ),
     );
   }

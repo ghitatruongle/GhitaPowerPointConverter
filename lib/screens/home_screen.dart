@@ -18,18 +18,33 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         title: Row(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.asset(
-                'assets/images/app_logo.png',
-                height: 32,
-                width: 32,
-                errorBuilder: (_, __, ___) =>
-                    const Icon(Icons.slideshow, size: 28),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Theme.of(context).colorScheme.primary,
+                    Theme.of(context).colorScheme.tertiary,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.asset(
+                  'assets/images/app_logo.png',
+                  height: 28,
+                  width: 28,
+                  errorBuilder: (_, __, ___) =>
+                      const Icon(Icons.slideshow, size: 24, color: Colors.white),
+                ),
               ),
             ),
             const SizedBox(width: 12),
-            Text(appProvider.currentScreenName),
+            Text(
+              appProvider.currentScreenName,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
           ],
         ),
         actions: [
@@ -39,8 +54,6 @@ class HomeScreen extends StatelessWidget {
             onPressed: () => appProvider.toggleTheme(),
           ),
         ],
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
       ),
       body: IndexedStack(
         index: appProvider.currentIndex,

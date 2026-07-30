@@ -11,19 +11,6 @@ class EffectsScreen extends StatefulWidget {
 }
 
 class _EffectsScreenState extends State<EffectsScreen> {
-  /// Animation preview types for the live widget preview
-  final List<String> _availableAnimations = [
-    'Fade In',
-    'Slide In Left',
-    'Slide In Right',
-    'Scale In',
-    'Rotate In',
-    'Bounce In',
-  ];
-
-  /// Available PPTX transition effects (for export)
-  final List<SlideEffect> _availableSlideEffects = SlideEffect.values;
-
   /// Currently selected preview animation name
   String _selectedAnimation = 'Fade In';
 
@@ -42,18 +29,20 @@ class _EffectsScreenState extends State<EffectsScreen> {
       child: Column(
         children: [
           // Header
-          const Card(
+          Card(
             child: Padding(
-              padding: EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Enhanced Animation Effects',
-                      style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  SizedBox(height: 8),
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 4),
                   Text(
-                      'Preview animations and apply transition effects to your PPTX export'),
+                    'Preview animations and apply transition effects to your PPTX export',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
                 ],
               ),
             ),
@@ -71,19 +60,42 @@ class _EffectsScreenState extends State<EffectsScreen> {
                   Text('Live Preview Animation',
                       style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
-                  DropdownButton<String>(
-                    isExpanded: true,
-                    value: _selectedAnimation,
-                    items: _availableAnimations.map((String name) {
-                      return DropdownMenuItem(
-                        value: name,
-                        child: Text(name),
-                      );
-                    }).toList(),
-                    onChanged: (String? newValue) {
-                      if (newValue != null) {
-                        setState(() => _selectedAnimation = newValue);
-                      }
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(
+                        value: 'Fade In',
+                        label: Text('Fade'),
+                        icon: Icon(Icons.opacity, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: 'Slide In Left',
+                        label: Text('Slide L'),
+                        icon: Icon(Icons.swipe, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: 'Slide In Right',
+                        label: Text('Slide R'),
+                        icon: Icon(Icons.swipe, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: 'Scale In',
+                        label: Text('Scale'),
+                        icon: Icon(Icons.zoom_in, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: 'Rotate In',
+                        label: Text('Rotate'),
+                        icon: Icon(Icons.rotate_right, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: 'Bounce In',
+                        label: Text('Bounce'),
+                        icon: Icon(Icons.animation, size: 18),
+                      ),
+                    ],
+                    selected: {_selectedAnimation},
+                    onSelectionChanged: (Set<String> newSelection) {
+                      setState(() => _selectedAnimation = newSelection.first);
                     },
                   ),
 
@@ -163,29 +175,47 @@ class _EffectsScreenState extends State<EffectsScreen> {
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant)),
                   const SizedBox(height: 8),
-                  DropdownButton<SlideEffect>(
-                    isExpanded: true,
-                    value: _selectedSlideEffect,
-                    items: _availableSlideEffects.map((SlideEffect effect) {
-                      return DropdownMenuItem(
-                        value: effect,
-                        child: Text(_slideEffectDisplayName(effect)),
-                      );
-                    }).toList(),
-                    onChanged: (SlideEffect? newValue) {
-                      if (newValue != null) {
-                        setState(() => _selectedSlideEffect = newValue);
-                      }
+                  SegmentedButton<SlideEffect>(
+                    segments: const [
+                      ButtonSegment(
+                        value: SlideEffect.none,
+                        label: Text('None'),
+                        icon: Icon(Icons.block, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: SlideEffect.fade,
+                        label: Text('Fade'),
+                        icon: Icon(Icons.opacity, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: SlideEffect.pushLeft,
+                        label: Text('Push L'),
+                        icon: Icon(Icons.arrow_back, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: SlideEffect.wipe,
+                        label: Text('Wipe'),
+                        icon: Icon(Icons.cleaning_services, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: SlideEffect.zoom,
+                        label: Text('Zoom'),
+                        icon: Icon(Icons.zoom_in, size: 18),
+                      ),
+                    ],
+                    selected: {_selectedSlideEffect},
+                    onSelectionChanged: (Set<SlideEffect> newSelection) {
+                      setState(() => _selectedSlideEffect = newSelection.first);
                     },
                   ),
                   const SizedBox(height: 16),
-                  ElevatedButton.icon(
+                  FilledButton.icon(
                     onPressed: () {
                       presentationState.setEffect(_selectedSlideEffect);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
-                              'Applied "${_slideEffectDisplayName(_selectedSlideEffect)}" effect to presentation!'),
+                              'Applied "${_slideEffectDisplayName(_selectedSlideEffect)}" effect!'),
                         ),
                       );
                     },
@@ -199,36 +229,29 @@ class _EffectsScreenState extends State<EffectsScreen> {
 
           const SizedBox(height: 16),
 
-          // --- Visual Effects Chips ---
-          const Card(
+          // --- Visual Effects Info ---
+          Card(
             child: Padding(
-              padding: EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Advanced Visual Effects:',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  SizedBox(height: 12),
+                  Text('Available Transitions (${SlideEffect.values.length} total):',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: [
-                      Chip(
-                          avatar: Icon(Icons.auto_awesome, size: 16),
-                          label: Text('Glow Effect')),
-                      Chip(
-                          avatar: Icon(Icons.layers, size: 16),
-                          label: Text('Shadow Depth')),
-                      Chip(
-                          avatar: Icon(Icons.gradient, size: 16),
-                          label: Text('Gradient Background')),
-                      Chip(
-                          avatar: Icon(Icons.highlight, size: 16),
-                          label: Text('Text Highlight')),
-                      Chip(
-                          avatar: Icon(Icons.style, size: 16),
-                          label: Text('Image Masking')),
-                    ],
+                    children: SlideEffect.values
+                        .where((e) => e != SlideEffect.none)
+                        .map((effect) {
+                      return ActionChip(
+                        label: Text(_slideEffectDisplayName(effect)),
+                        onPressed: () {
+                          setState(() => _selectedSlideEffect = effect);
+                        },
+                      );
+                    }).toList(),
                   ),
                 ],
               ),

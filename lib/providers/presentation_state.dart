@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../services/ppt_generator.dart';
+import '../services/html_export_service.dart';
 import 'config_service.dart';
 
 // Slide transition effects that map to PPTX transitions.
@@ -164,6 +165,27 @@ class PresentationState with ChangeNotifier {
       exportStatus = 'success';
       notifyListeners();
       return pptFile.path;
+    } catch (e) {
+      exportStatus = 'error';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Export to a self-contained HTML file for browser-based presentation.
+  Future<String> exportToHtml(String fileName) async {
+    exportStatus = 'exporting';
+    notifyListeners();
+    try {
+      final htmlService = HtmlExportService();
+      final exportedPath = await htmlService.exportToHtml(
+        _slides,
+        fileName: fileName,
+      );
+      lastExportedPath = exportedPath;
+      exportStatus = 'success';
+      notifyListeners();
+      return exportedPath;
     } catch (e) {
       exportStatus = 'error';
       notifyListeners();

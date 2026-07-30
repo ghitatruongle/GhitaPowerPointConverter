@@ -1,0 +1,50 @@
+import 'package:flutter/material.dart';
+import 'package:ghita_ppt_converter/providers/presentation_state.dart';
+
+/// A pre-made HTML template for presentation slides.
+class SlideTemplate {
+  final String id;
+  final String name;
+  final String description;
+  final String htmlContent;
+  final SlideEffect recommendedEffect;
+  final IconData icon;
+  final Color accentColor;
+
+  SlideTemplate({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.htmlContent,
+    required this.recommendedEffect,
+    required this.icon,
+    required this.accentColor,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'htmlContent': htmlContent,
+      'recommendedEffect': recommendedEffect.name,
+      'icon': icon.codePoint,
+      'accentColor': accentColor.value,
+    };
+  }
+
+  factory SlideTemplate.fromMap(Map<String, dynamic> map) {
+    return SlideTemplate(
+      id: map['id'] as String,
+      name: map['name'] as String,
+      description: map['description'] as String,
+      htmlContent: map['htmlContent'] as String,
+      recommendedEffect: SlideEffect.values.firstWhere(
+        (e) => e.name == map['recommendedEffect'],
+        orElse: () => SlideEffect.none,
+      ),
+      icon: IconData(map['icon'] as int, fontFamily: 'MaterialIcons'),
+      accentColor: Color(map['accentColor'] as int),
+    );
+  }
+}

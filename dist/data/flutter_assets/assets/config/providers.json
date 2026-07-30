@@ -3,15 +3,26 @@
     "id": "openai_default",
     "name": "OpenAI (GPT-4o / GPT-3.5)",
     "baseUrl": "https://api.openai.com",
-    "model": "gpt-3.5-turbo",
-    "contextWindow": 16385,
+    "availableModels": [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "gpt-3.5-turbo",
+      "o1-preview"
+    ],
+    "selectedModel": "gpt-4o",
+    "contextWindow": 128000,
     "formatType": "openai"
   },
   {
     "id": "anthropic_default",
-    "name": "Anthropic (Claude 3.5 Sonnet)",
+    "name": "Anthropic (Claude)",
     "baseUrl": "https://api.anthropic.com",
-    "model": "claude-3-5-sonnet-20240620",
+    "availableModels": [
+      "claude-3-5-sonnet-20240620",
+      "claude-3-opus-20240229",
+      "claude-3-haiku-20240307"
+    ],
+    "selectedModel": "claude-3-5-sonnet-20240620",
     "contextWindow": 200000,
     "formatType": "anthropic"
   }

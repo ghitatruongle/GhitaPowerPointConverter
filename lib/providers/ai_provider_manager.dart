@@ -10,7 +10,8 @@ class AIProviderConfig {
   final String name;
   final String baseUrl;
   final String apiKey;
-  final String model;
+  final List<String> availableModels;
+  final String selectedModel;
   final int contextWindow;
   final String formatType; // openai, anthropic, custom
   final double temperature;
@@ -21,7 +22,8 @@ class AIProviderConfig {
     required this.name,
     required this.baseUrl,
     required this.apiKey,
-    required this.model,
+    required this.availableModels,
+    required this.selectedModel,
     required this.contextWindow,
     this.formatType = 'openai',
     this.temperature = 0.7,
@@ -33,7 +35,8 @@ class AIProviderConfig {
     String? name,
     String? baseUrl,
     String? apiKey,
-    String? model,
+    List<String>? availableModels,
+    String? selectedModel,
     int? contextWindow,
     String? formatType,
     double? temperature,
@@ -44,7 +47,8 @@ class AIProviderConfig {
       name: name ?? this.name,
       baseUrl: baseUrl ?? this.baseUrl,
       apiKey: apiKey ?? this.apiKey,
-      model: model ?? this.model,
+      availableModels: availableModels ?? this.availableModels,
+      selectedModel: selectedModel ?? this.selectedModel,
       contextWindow: contextWindow ?? this.contextWindow,
       formatType: formatType ?? this.formatType,
       temperature: temperature ?? this.temperature,
@@ -58,7 +62,8 @@ class AIProviderConfig {
       'name': name,
       'baseUrl': baseUrl,
       // apiKey intentionally excluded from serialization to non-secure storage.
-      'model': model,
+      'availableModels': availableModels,
+      'selectedModel': selectedModel,
       'contextWindow': contextWindow,
       'formatType': formatType,
       'temperature': temperature,
@@ -67,12 +72,18 @@ class AIProviderConfig {
   }
 
   factory AIProviderConfig.fromMap(Map<String, dynamic> map) {
+    final modelsList = (map['availableModels'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [];
     return AIProviderConfig(
       id: map['id'] ?? '',
       name: map['name'] ?? '',
       baseUrl: map['baseUrl'] ?? '',
       apiKey: '', // apiKey is loaded separately from secure storage
-      model: map['model'] ?? '',
+      availableModels: modelsList.isNotEmpty ? modelsList : [map['model'] ?? ''],
+      selectedModel: map['selectedModel'] ??
+          (modelsList.isNotEmpty ? modelsList.first : (map['model'] ?? '')),
       contextWindow: map['contextWindow'] ?? 4096,
       formatType: map['formatType'] ?? 'openai',
       temperature: (map['temperature'] as num?)?.toDouble() ?? 0.7,
@@ -83,19 +94,47 @@ class AIProviderConfig {
   static AIProviderConfig defaultProvider() {
     return AIProviderConfig(
       id: 'openai_default',
-      name: 'OpenAI (default)',
+      name: 'OpenAI (GPT-4o / GPT-3.5)',
       baseUrl: 'https://api.openai.com',
       apiKey: '',
-      model: 'gpt-3.5-turbo',
-      contextWindow: 16385,
+      availableModels: [
+        'gpt-4o',
+        'gpt-4o-mini',
+        'gpt-3.5-turbo',
+        'o1-preview',
+      ],
+      selectedModel: 'gpt-4o',
+      contextWindow: 128000,
       formatType: 'openai',
       temperature: 0.7,
       maxTokens: 4096,
     );
   }
 
+  static AIProviderConfig anthropicDefault() {
+    return AIProviderConfig(
+      id: 'anthropic_default',
+      name: 'Anthropic (Claude)',
+      baseUrl: 'https://api.anthropic.com',
+      apiKey: '',
+      availableModels: [
+        'claude-3-5-sonnet-20240620',
+        'claude-3-opus-20240229',
+        'claude-3-haiku-20240307',
+      ],
+      selectedModel: 'claude-3-5-sonnet-20240620',
+      contextWindow: 200000,
+      formatType: 'anthropic',
+      temperature: 0.7,
+      maxTokens: 4096,
+    );
+  }
+
   /// Validate that this provider has all required non-secret fields.
-  bool get isValid => id.isNotEmpty && baseUrl.isNotEmpty && model.isNotEmpty;
+  bool get isValid => id.isNotEmpty && baseUrl.isNotEmpty && selectedModel.isNotEmpty;
+
+  /// Convenience getter for backward compatibility in a few places.
+  String get model => selectedModel;
 }
 
 class AIProviderManager with ChangeNotifier {
@@ -210,6 +249,68 @@ class AIProviderManager with ChangeNotifier {
     _providers[_providers.indexWhere((p) => p.id == provider.id)] =
         provider.copyWith(apiKey: apiKey);
     notifyListeners();
+  }
+
+  // ---- Error handling helpers ----
+
+  /// Classify HTTP error into a user-friendly message.
+  static String _friendlyErrorMessage(int statusCode, String body) {
+    switch (statusCode) {
+      case 400:
+        return 'Invalid request. Check your prompt and try again.';
+      case 401:
+        return 'API key invalid or expired. Please check your settings.';
+      case 403:
+        return 'Access denied. Check your API key permissions.';
+      case 404:
+        return 'API endpoint not found. Check the Base URL in settings.';
+      case 429:
+        return 'Rate limit exceeded. Please wait a moment and try again.';
+      case 500:
+        return 'Server error. The AI service may be temporarily unavailable.';
+      case 502:
+        return 'Bad gateway. The service is temporarily unavailable.';
+      case 503:
+        return 'Service temporarily overloaded. Please try again later.';
+      default:
+        if (statusCode >= 500) {
+          return 'Server error ($statusCode). Please try again later.';
+        }
+        return 'API Error $statusCode: ${body.length > 100 ? '${body.substring(0, 100)}...' : body}';
+    }
+  }
+
+  /// Validate provider config and return an error message, or null if valid.
+  static String? validateProvider(AIProviderConfig provider) {
+    if (provider.id.trim().isEmpty) {
+      return 'Provider ID cannot be empty.';
+    }
+    if (provider.name.trim().isEmpty) {
+      return 'Provider name cannot be empty.';
+    }
+    if (provider.baseUrl.trim().isEmpty) {
+      return 'Base URL cannot be empty.';
+    }
+    final uri = Uri.tryParse(provider.baseUrl.trim());
+    if (uri == null || (!uri.hasScheme || !uri.hasAuthority)) {
+      return 'Base URL is not a valid URL (must start with http:// or https://).';
+    }
+    if (provider.availableModels.isEmpty) {
+      return 'Provider must have at least 1 model configured.';
+    }
+    if (provider.selectedModel.isEmpty) {
+      return 'No model selected. Please choose an active model.';
+    }
+    if (provider.contextWindow <= 0) {
+      return 'Context window must be a positive number.';
+    }
+    if (provider.temperature < 0 || provider.temperature > 2) {
+      return 'Temperature must be between 0.0 and 2.0.';
+    }
+    if (provider.maxTokens <= 0) {
+      return 'Max tokens must be a positive number.';
+    }
+    return null;
   }
 
   // ---- Single slide generation ----
@@ -333,7 +434,7 @@ class AIProviderManager with ChangeNotifier {
           'Content-Type': 'application/json',
         },
         body: jsonEncode({
-          'model': config.model,
+          'model': config.selectedModel,
           'messages': [
             {'role': 'system', 'content': _systemPrompt},
             {
@@ -351,7 +452,7 @@ class AIProviderManager with ChangeNotifier {
         final data = jsonDecode(response.body);
         return data['choices'][0]['message']['content'] ?? '';
       } else {
-        throw Exception('OpenAI API Error ${response.statusCode}: ${response.body}');
+        throw Exception(_friendlyErrorMessage(response.statusCode, response.body));
       }
     } finally {
       client.close();
@@ -369,7 +470,7 @@ class AIProviderManager with ChangeNotifier {
           'Content-Type': 'application/json',
         },
         body: jsonEncode({
-          'model': config.model,
+          'model': config.selectedModel,
           'messages': [
             {'role': 'system', 'content': systemPrompt},
             {'role': 'user', 'content': topic},
@@ -383,7 +484,7 @@ class AIProviderManager with ChangeNotifier {
         final data = jsonDecode(response.body);
         return data['choices'][0]['message']['content'] ?? '';
       } else {
-        throw Exception('OpenAI API Error ${response.statusCode}: ${response.body}');
+        throw Exception(_friendlyErrorMessage(response.statusCode, response.body));
       }
     } finally {
       client.close();
@@ -403,7 +504,7 @@ class AIProviderManager with ChangeNotifier {
           'Content-Type': 'application/json',
         },
         body: jsonEncode({
-          'model': config.model,
+          'model': config.selectedModel,
           'max_tokens': config.maxTokens,
           'system': _systemPrompt,
           'messages': [
@@ -420,7 +521,7 @@ class AIProviderManager with ChangeNotifier {
         final data = jsonDecode(response.body);
         return data['content'][0]['text'] ?? '';
       } else {
-        throw Exception('Anthropic API Error ${response.statusCode}: ${response.body}');
+        throw Exception(_friendlyErrorMessage(response.statusCode, response.body));
       }
     } finally {
       client.close();
@@ -439,7 +540,7 @@ class AIProviderManager with ChangeNotifier {
           'Content-Type': 'application/json',
         },
         body: jsonEncode({
-          'model': config.model,
+          'model': config.selectedModel,
           'max_tokens': config.maxTokens,
           'system': systemPrompt,
           'messages': [
@@ -452,7 +553,7 @@ class AIProviderManager with ChangeNotifier {
         final data = jsonDecode(response.body);
         return data['content'][0]['text'] ?? '';
       } else {
-        throw Exception('Anthropic API Error ${response.statusCode}: ${response.body}');
+        throw Exception(_friendlyErrorMessage(response.statusCode, response.body));
       }
     } finally {
       client.close();

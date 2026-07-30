@@ -58,30 +58,56 @@ class MyApp extends StatelessWidget {
             theme: ThemeData(
               useMaterial3: true,
               colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.blue,
+                seedColor: Colors.deepOrange,
                 brightness: Brightness.light,
-                primary: Colors.blue,
-                secondary: Colors.blueGrey,
               ),
               cardTheme: const CardThemeData(
-                elevation: 1,
-                margin: EdgeInsets.only(bottom: 8),
+                elevation: 2,
+                margin: EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(16)),
+                ),
               ),
-              appBarTheme: const AppBarTheme(centerTitle: false),
+              dividerTheme: const DividerThemeData(
+                color: Color(0xFFE0E0E0),
+                thickness: 1,
+                space: 1,
+              ),
+              appBarTheme: const AppBarTheme(
+                centerTitle: false,
+                elevation: 0,
+                surfaceTintColor: Colors.transparent,
+              ),
+              bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+                elevation: 4,
+              ),
             ),
             darkTheme: ThemeData(
               useMaterial3: true,
               colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.blue,
+                seedColor: Colors.deepOrange,
                 brightness: Brightness.dark,
-                primary: Colors.lightBlue,
-                secondary: Colors.blueGrey,
               ),
               cardTheme: const CardThemeData(
-                elevation: 1,
-                margin: EdgeInsets.only(bottom: 8),
+                elevation: 2,
+                margin: EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(16)),
+                ),
               ),
-              appBarTheme: const AppBarTheme(centerTitle: false),
+              dividerTheme: const DividerThemeData(
+                color: Color(0xFF404040),
+                thickness: 1,
+                space: 1,
+              ),
+              appBarTheme: const AppBarTheme(
+                centerTitle: false,
+                elevation: 0,
+                surfaceTintColor: Colors.transparent,
+              ),
+              bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+                elevation: 4,
+              ),
             ),
             home: const HomeScreen(),
           );

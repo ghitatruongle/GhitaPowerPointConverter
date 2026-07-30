@@ -1,6 +1,6 @@
 name: ghita_ppt_converter
 description: A Flutter app for creating PowerPoint presentations with HTML support and AI chat integration
-version: 0.0.5+1
+version: 0.1.5+1
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -40,4 +40,11 @@ flutter:
   assets:
     - assets/config/providers.json
     - assets/images/app_logo.png
+    - assets/templates/
+    - assets/templates/templates.json
+    - assets/templates/business.html
+    - assets/templates/creative.html
+    - assets/templates/academic.html
+    - assets/templates/marketing.html
+    - assets/templates/minimal.html
 

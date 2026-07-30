@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:provider/provider.dart';
 import '../providers/presentation_state.dart';
+import '../services/template_service.dart';
+import '../models/slide_template.dart';
 
 class HtmlToPPTScreen extends StatefulWidget {
   const HtmlToPPTScreen({super.key});
@@ -10,6 +12,8 @@ class HtmlToPPTScreen extends StatefulWidget {
   @override
   State<HtmlToPPTScreen> createState() => _HtmlToPPTScreenState();
 }
+
+enum ExportFormat { pptx, html }
 
 class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
   final _htmlController = TextEditingController();
@@ -148,9 +152,279 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
     setState(() => _editingIndex = null);
   }
 
-  // ---- Export ----
+  // ---- Template Gallery ----
+
+  Future<void> _showTemplateGallery() async {
+    final templateService = TemplateService();
+    final templates = await templateService.loadTemplates();
+    if (templates.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No templates available.')),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (context) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final dialogWidth = screenWidth * 0.85;
+        return AlertDialog(
+          title: const Text('Choose a Template'),
+          content: SizedBox(
+            width: dialogWidth > 600 ? 600 : dialogWidth,
+            height: 450,
+            child: ListView.builder(
+              itemCount: templates.length,
+              itemBuilder: (context, index) {
+                final template = templates[index];
+                return Card(
+                  margin: const EdgeInsets.symmetric(vertical: 6),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: template.accentColor,
+                      child: Icon(template.icon, color: Colors.white, size: 20),
+                    ),
+                    title: Text(template.name,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(template.description,
+                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                    trailing: FilledButton.tonal(
+                      onPressed: () {
+                        _applyTemplate(template);
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Use'),
+                    ),
+                    onTap: () => _previewTemplate(template),
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _applyTemplate(SlideTemplate template) {
+    _htmlController.text = template.htmlContent;
+    _titleController.text = _extractTitleFromHtml(template.htmlContent);
+    setState(() => _editingIndex = null);
+
+    // Auto-apply recommended effect
+    final state = Provider.of<PresentationState>(context, listen: false);
+    state.setEffect(template.recommendedEffect);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Applied "${template.name}" template! '
+            'Effect: ${_effectName(template.recommendedEffect)}'),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _previewTemplate(SlideTemplate template) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(template.name),
+        content: SizedBox(
+          width: 500,
+          height: 400,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(template.description,
+                    style: Theme.of(context).textTheme.bodyMedium),
+                const SizedBox(height: 12),
+                const Text('HTML Preview:',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SelectableText(
+                    template.htmlContent,
+                    style: const TextStyle(
+                        fontFamily: 'monospace', fontSize: 12, height: 1.5),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Chip(
+                  label: Text(
+                      'Effect: ${_effectName(template.recommendedEffect)}'),
+                  avatar: const Icon(Icons.animation, size: 16),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _applyTemplate(template);
+            },
+            child: const Text('Use This Template'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _extractTitleFromHtml(String html) {
+    try {
+      final doc = html_parser.parse(html);
+      final h1 = doc.querySelector('h1');
+      if (h1 != null && h1.text.trim().isNotEmpty) {
+        return h1.text.trim();
+      }
+    } catch (_) {}
+    return 'New Slide';
+  }
+
+  String _effectName(SlideEffect effect) {
+    switch (effect) {
+      case SlideEffect.fade:
+        return 'Fade';
+      case SlideEffect.pushLeft:
+        return 'Push Left';
+      case SlideEffect.pushRight:
+        return 'Push Right';
+      case SlideEffect.pushUp:
+        return 'Push Up';
+      case SlideEffect.pushDown:
+        return 'Push Down';
+      case SlideEffect.wipe:
+        return 'Wipe';
+      case SlideEffect.splitIn:
+        return 'Split In';
+      case SlideEffect.splitOut:
+        return 'Split Out';
+      case SlideEffect.randomBar:
+        return 'Random Bars';
+      case SlideEffect.checkerboard:
+        return 'Checkerboard';
+      case SlideEffect.blinds:
+        return 'Blinds';
+      case SlideEffect.clock:
+        return 'Clock';
+      case SlideEffect.zoom:
+        return 'Zoom';
+      default:
+        return 'None';
+    }
+  }
 
   Future<void> _exportToPPT() async {
+    final fileName = await _showExportDialog();
+    if (fileName == null) return; // user cancelled
+    await _performExport(fileName, ExportFormat.pptx);
+  }
+
+  Future<String?> _showExportDialog() async {
+    final nameController = TextEditingController(text: 'Presentation_Output');
+    ExportFormat selectedFormat = ExportFormat.pptx;
+
+    return showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Export Presentation'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Choose a file name and format:'),
+              const SizedBox(height: 12),
+              SegmentedButton<ExportFormat>(
+                segments: const [
+                  ButtonSegment(
+                    value: ExportFormat.pptx,
+                    label: Text('PPTX'),
+                    icon: Icon(Icons.slideshow, size: 18),
+                  ),
+                  ButtonSegment(
+                    value: ExportFormat.html,
+                    label: Text('HTML'),
+                    icon: Icon(Icons.html, size: 18),
+                  ),
+                ],
+                selected: {selectedFormat},
+                onSelectionChanged: (Set<ExportFormat> newSelection) {
+                  setDialogState(() {
+                    selectedFormat = newSelection.first;
+                    if (selectedFormat == ExportFormat.html) {
+                      nameController.text = 'presentation';
+                    } else {
+                      nameController.text = 'Presentation_Output';
+                    }
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: nameController,
+                decoration: InputDecoration(
+                  labelText: 'File Name',
+                  hintText: selectedFormat == ExportFormat.pptx
+                      ? 'My_Presentation'
+                      : 'presentation',
+                  suffixText: selectedFormat == ExportFormat.pptx
+                      ? '.pptx'
+                      : '.html',
+                  border: const OutlineInputBorder(),
+                ),
+                autofocus: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final name = nameController.text.trim();
+                if (name.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter a file name')),
+                  );
+                  return;
+                }
+                Navigator.pop(context, name);
+                _performExport(name, selectedFormat);
+              },
+              child: Text(selectedFormat == ExportFormat.pptx
+                  ? 'Export PPTX'
+                  : 'Export HTML'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _performExport(String fileName, ExportFormat format) async {
     final presentationState =
         Provider.of<PresentationState>(context, listen: false);
     if (presentationState.slides.isEmpty) {
@@ -160,15 +434,15 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
       return;
     }
 
-    // Show save dialog
-    final fileName = await _showExportDialog();
-    if (fileName == null) return; // user cancelled
-
     setState(() => _isLoading = true);
 
     try {
-      final exportedPath =
-          await presentationState.exportToPPT(fileName);
+      String exportedPath;
+      if (format == ExportFormat.pptx) {
+        exportedPath = await presentationState.exportToPPT(fileName);
+      } else {
+        exportedPath = await presentationState.exportToHtml(fileName);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -186,52 +460,6 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  Future<String?> _showExportDialog() async {
-    final nameController = TextEditingController(text: 'Presentation_Output');
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Export Presentation'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Choose a file name for your PPTX presentation:'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'File Name',
-                hintText: 'My_Presentation',
-                suffixText: '.pptx',
-                border: OutlineInputBorder(),
-              ),
-              autofocus: true,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final name = nameController.text.trim();
-              if (name.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter a file name')),
-                );
-                return;
-              }
-              Navigator.pop(context, name);
-            },
-            child: const Text('Export'),
-          ),
-        ],
-      ),
-    );
   }
 
   // ---- Clear all slides ----
@@ -286,98 +514,136 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
         },
         child: Padding(
       padding: const EdgeInsets.all(16.0),
-      child: Column(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Title input
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: TextField(
-                controller: _titleController,
-                decoration: const InputDecoration(
-                  labelText: 'Slide / Presentation Title',
-                  border: OutlineInputBorder(),
+          // Left panel: Editor
+          Expanded(
+            flex: 4,
+            child: Column(
+              children: [
+                // Title input
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: TextField(
+                      controller: _titleController,
+                      decoration: const InputDecoration(
+                        labelText: 'Slide / Presentation Title',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+
+                const SizedBox(height: 12),
+
+                // HTML editor
+                Expanded(
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Stack(
+                        children: [
+                          TextFormField(
+                            controller: _htmlController,
+                            maxLines: null,
+                            expands: true,
+                            decoration: const InputDecoration(
+                              labelText: 'HTML Content',
+                              border: InputBorder.none,
+                              hintText:
+                                  '<h1>Title</h1><p>Content...</p><ul><li>Item</li></ul>',
+                            ),
+                            keyboardType: TextInputType.multiline,
+                          ),
+                          if (_isLoading)
+                            Positioned.fill(
+                              child: Container(
+                                color: Colors.black12,
+                                child: const Center(
+                                    child: CircularProgressIndicator()),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Action buttons
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _showTemplateGallery,
+                      icon: const Icon(Icons.palette_outlined),
+                      label: const Text('Templates'),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _addOrUpdateSlide,
+                      icon: Icon(_editingIndex != null ? Icons.save : Icons.add_box),
+                      label: Text(_editingIndex != null ? 'Update' : 'Add Slide'),
+                    ),
+                    if (_editingIndex != null)
+                      TextButton.icon(
+                        onPressed: _clearEditor,
+                        icon: const Icon(Icons.close),
+                        label: const Text('Cancel'),
+                      ),
+                    ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _exportToPPT,
+                      icon: const Icon(Icons.download),
+                      label: const Text('Export'),
+                    ),
+                    if (slides.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: _confirmClearAll,
+                        icon: const Icon(Icons.delete_sweep, size: 18),
+                        label: const Text('Clear', style: TextStyle(fontSize: 12)),
+                      ),
+                  ],
+                ),
+              ],
             ),
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(width: 16),
 
-          // HTML editor
+          // Right panel: Slide list
           Expanded(
-            flex: 2,
+            flex: 5,
             child: Card(
               child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Stack(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    TextFormField(
-                      controller: _htmlController,
-                      maxLines: null,
-                      expands: true,
-                      decoration: const InputDecoration(
-                        labelText: 'HTML Content',
-                        border: InputBorder.none,
-                        hintText:
-                            '<h1>Title</h1><p>Slide content...</p><ul><li>Item</li></ul>',
-                      ),
-                      keyboardType: TextInputType.multiline,
-                    ),
-                    if (_isLoading)
-                      Positioned.fill(
-                        child: Container(
-                          color: Colors.black12,
-                          child:
-                              const Center(child: CircularProgressIndicator()),
+                    Row(
+                      children: [
+                        Text(
+                          'Slides (${slides.length})',
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
-                      ),
+                        const Spacer(),
+                        if (slides.isNotEmpty)
+                          Text(
+                            'Drag to reorder',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                      ],
+                    ),
+                    const Divider(height: 24),
+                    Expanded(child: _buildSlidesList(presentationState, slides)),
                   ],
                 ),
               ),
             ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Action buttons row
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              ElevatedButton.icon(
-                onPressed: _isLoading ? null : _addOrUpdateSlide,
-                icon: Icon(_editingIndex != null ? Icons.save : Icons.add_box),
-                label: Text(_editingIndex != null ? 'Update Slide' : 'Add Slide'),
-              ),
-              if (_editingIndex != null)
-                TextButton.icon(
-                  onPressed: _clearEditor,
-                  icon: const Icon(Icons.close),
-                  label: const Text('Cancel Edit'),
-                ),
-              ElevatedButton.icon(
-                onPressed: _isLoading ? null : _exportToPPT,
-                icon: const Icon(Icons.download),
-                label: const Text('Export PPTX'),
-              ),
-              if (slides.isNotEmpty)
-                TextButton.icon(
-                  onPressed: _confirmClearAll,
-                  icon: const Icon(Icons.delete_sweep, color: Colors.red),
-                  label: const Text('Clear All',
-                      style: TextStyle(color: Colors.red)),
-                ),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
-          // Slides list
-          Expanded(
-            flex: 3,
-            child: _buildSlidesList(presentationState, slides),
           ),
         ],
       ),
@@ -394,8 +660,7 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.slideshow,
-                size: 64,
-                color: Theme.of(context).colorScheme.outline),
+                size: 64, color: Theme.of(context).colorScheme.outline),
             const SizedBox(height: 16),
             Text(
               'No slides yet',
@@ -416,11 +681,9 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
       );
     }
 
-    // Check if ReorderableListView can be used
     return ReorderableListView.builder(
       itemCount: slides.length,
       onReorderItem: (oldIndex, newIndex) {
-        // With onReorderItem, newIndex is already adjusted for the removal
         state.moveSlide(oldIndex, newIndex);
       },
       proxyDecorator: (child, index, animation) {
@@ -440,14 +703,8 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
       },
       itemBuilder: (context, index) {
         final slide = slides[index];
-            final String title = slide['title'] ?? 'Slide ${index + 1}';
+        final String title = slide['title'] ?? 'Slide ${index + 1}';
         final String htmlContent = slide['htmlContent'] ?? '';
-        final contentPreview = htmlContent.length > 50
-            ? '${htmlContent.substring(0, 50)}...'
-            : htmlContent;
-
-        // Build a simple thumbnail preview chip summary
-        final thumbnailWidget = _buildSlideThumbnail(htmlContent);
 
         return Card(
           key: ValueKey('slide_${slide['timestamp']}_$index'),
@@ -455,22 +712,34 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
           child: ListTile(
             leading: ReorderableDragStartListener(
               index: index,
-              child: Icon(Icons.drag_handle,
-                  color: Theme.of(context).colorScheme.outline),
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.drag_handle,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer, size: 20),
+              ),
             ),
             title: Text(title,
                 style: const TextStyle(fontWeight: FontWeight.w500)),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(contentPreview,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                Text(
+                  htmlContent.length > 60
+                      ? '${htmlContent.substring(0, 60)}...'
+                      : htmlContent,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
                 const SizedBox(height: 4),
-                thumbnailWidget,
+                _buildSlideThumbnail(htmlContent),
               ],
             ),
             trailing: Row(
@@ -498,7 +767,6 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
                         action: SnackBarAction(
                           label: 'Undo',
                           onPressed: () {
-                            // Restore with fresh timestamp and find correct position
                             final restored = Map<String, dynamic>.from(deletedSlide)
                               ..['timestamp'] =
                                   DateTime.now().millisecondsSinceEpoch;
