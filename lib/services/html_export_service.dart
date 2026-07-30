@@ -26,6 +26,26 @@ class HtmlExportService {
     return htmlFile.path;
   }
 
+  /// Export the HTML deck to an explicit file path (save-as dialog).
+  Future<String> exportToHtmlPath(
+    List<Map<String, dynamic>> slides,
+    String filePath,
+  ) async {
+    if (slides.isEmpty) {
+      throw Exception('No slides to export.');
+    }
+    final htmlContent = _buildHtmlPresentation(slides);
+    final File htmlFile = File(filePath);
+    await htmlFile.create(recursive: true);
+    await htmlFile.writeAsString(htmlContent, flush: true);
+    return htmlFile.path;
+  }
+
+  /// Build the standalone presentation HTML (used by in-app present mode).
+  String buildPresentationHtml(List<Map<String, dynamic>> slides) {
+    return _buildHtmlPresentation(slides);
+  }
+
   String _buildHtmlPresentation(List<Map<String, dynamic>> slides) {
     final buffer = StringBuffer();
 
@@ -284,7 +304,7 @@ class HtmlExportService {
     final doubleQuote = RegExp(r'data-bg-color="([^"]+)"', caseSensitive: false).firstMatch(html);
     if (doubleQuote != null) return doubleQuote.group(1);
     final singleQuote = RegExp(r"data-bg-color='([^']+)'", caseSensitive: false).firstMatch(html);
-    return singleQuote != null ? singleQuote.group(1) : null;
+    return singleQuote?.group(1);
   }
 
   String _processSlideHtml(String rawHtml) {

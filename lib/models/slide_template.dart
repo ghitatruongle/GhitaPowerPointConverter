@@ -11,6 +11,19 @@ class SlideTemplate {
   final IconData icon;
   final Color accentColor;
 
+  /// Known template icons keyed by code point (tree-shake friendly:
+  /// dynamic IconData construction breaks icon font tree shaking).
+  static const Map<int, IconData> knownIcons = {
+    983162: Icons.business_center,
+    983166: Icons.palette,
+    983195: Icons.school,
+    983187: Icons.campaign,
+    983173: Icons.crop_square,
+  };
+
+  static IconData iconForCodePoint(int? codePoint) =>
+      knownIcons[codePoint] ?? Icons.description;
+
   SlideTemplate({
     required this.id,
     required this.name,
@@ -29,7 +42,7 @@ class SlideTemplate {
       'htmlContent': htmlContent,
       'recommendedEffect': recommendedEffect.name,
       'icon': icon.codePoint,
-      'accentColor': accentColor.value,
+      'accentColor': accentColor.toARGB32(),
     };
   }
 
@@ -43,7 +56,7 @@ class SlideTemplate {
         (e) => e.name == map['recommendedEffect'],
         orElse: () => SlideEffect.none,
       ),
-      icon: IconData(map['icon'] as int, fontFamily: 'MaterialIcons'),
+      icon: iconForCodePoint(map['icon'] as int?),
       accentColor: Color(map['accentColor'] as int),
     );
   }

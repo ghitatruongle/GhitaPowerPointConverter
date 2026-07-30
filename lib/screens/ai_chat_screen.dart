@@ -16,9 +16,12 @@ class _AiChatScreenState extends State<AiChatScreen> {
   final _messageController = TextEditingController();
   final _messages = <Map<String, dynamic>>[];
   bool _isGenerating = false;
+  bool _isStreaming = false;
+  bool _outlineMode = false;
 
   @override
   void dispose() {
+    widget.aiProviderManager.cancelStream();
     _messageController.dispose();
     super.dispose();
   }
@@ -85,6 +88,25 @@ class _AiChatScreenState extends State<AiChatScreen> {
                     icon: const Icon(Icons.settings),
                     tooltip: 'Provider Settings',
                     onPressed: _showProviderSettings,
+                  ),
+                  const SizedBox(width: 8),
+                  SegmentedButton<bool>(
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    segments: const [
+                      ButtonSegment(
+                          value: false,
+                          label: Text('Chat', style: TextStyle(fontSize: 12))),
+                      ButtonSegment(
+                          value: true,
+                          label:
+                              Text('Outline', style: TextStyle(fontSize: 12))),
+                    ],
+                    selected: {_outlineMode},
+                    onSelectionChanged: (sel) =>
+                        setState(() => _outlineMode = sel.first),
                   ),
                 ],
               ),
@@ -161,13 +183,11 @@ class _AiChatScreenState extends State<AiChatScreen> {
                                             Provider.of<PresentationState>(
                                                     context,
                                                     listen: false)
-                                                .addSlide({
-                                              'title': title,
-                                              'htmlContent':
+                                                .addSlide(Slide(
+                                              title: title,
+                                              htmlContent:
                                                   s['htmlContent'] ?? '',
-                                              'timestamp': DateTime.now()
-                                                  .millisecondsSinceEpoch,
-                                            });
+                                            ));
                                             ScaffoldMessenger.of(context)
                                                 .showSnackBar(
                                               SnackBar(
@@ -191,14 +211,12 @@ class _AiChatScreenState extends State<AiChatScreen> {
                                                 context,
                                                 listen: false);
                                             for (final s in slides) {
-                                              state.addSlide({
-                                                'title':
+                                              state.addSlide(Slide(
+                                                title:
                                                     s['title'] ?? 'Untitled',
-                                                'htmlContent':
+                                                htmlContent:
                                                     s['htmlContent'] ?? '',
-                                                'timestamp': DateTime.now()
-                                                    .millisecondsSinceEpoch,
-                                              });
+                                              ));
                                             }
                                             ScaffoldMessenger.of(context)
                                                 .showSnackBar(
@@ -227,12 +245,10 @@ class _AiChatScreenState extends State<AiChatScreen> {
                                     onPressed: () {
                                       Provider.of<PresentationState>(context,
                                               listen: false)
-                                          .addSlide({
-                                        'title': 'AI Generated Slide',
-                                        'htmlContent': content,
-                                        'timestamp': DateTime.now()
-                                            .millisecondsSinceEpoch,
-                                      });
+                                          .addSlide(Slide(
+                                        title: 'AI Generated Slide',
+                                        htmlContent: content,
+                                      ));
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
                                         const SnackBar(
@@ -256,23 +272,40 @@ class _AiChatScreenState extends State<AiChatScreen> {
           TextField(
             controller: _messageController,
             decoration: InputDecoration(
-              hintText: 'Describe presentation topic or HTML slide content...',
+              hintText: _outlineMode
+                  ? 'Describe a topic to build an outline...'
+                  : 'Describe presentation topic or HTML slide content...',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
               suffixIcon: _isGenerating
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                  ? (_isStreaming
+                      ? IconButton(
+                          icon: const Icon(Icons.stop_circle_outlined,
+                              color: Colors.red),
+                          tooltip: 'Stop generating',
+                          onPressed: () =>
+                              widget.aiProviderManager.cancelStream(),
+                        )
+                      : const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ))
                   : IconButton(
                       icon: const Icon(Icons.send),
                       onPressed: () async {
                         final text = _messageController.text.trim();
                         if (text.isNotEmpty && !_isGenerating) {
                           _messageController.clear();
-                          await _generateHtmlForPresentation(text);
+                          if (_outlineMode) {
+                            await _generateWithOutline(text);
+                          } else {
+                            await _generateHtmlForPresentation(text);
+                          }
                         }
                       },
                     ),
@@ -281,7 +314,11 @@ class _AiChatScreenState extends State<AiChatScreen> {
               final trimmed = text.trim();
               if (trimmed.isNotEmpty && !_isGenerating) {
                 _messageController.clear();
-                await _generateHtmlForPresentation(trimmed);
+                if (_outlineMode) {
+                  await _generateWithOutline(trimmed);
+                } else {
+                  await _generateHtmlForPresentation(trimmed);
+                }
               }
             },
           ),
@@ -350,12 +387,31 @@ class _AiChatScreenState extends State<AiChatScreen> {
           });
         }
       } else {
-        final htmlContent =
-            await widget.aiProviderManager.generateHtmlFromPrompt(prompt);
+        // Single slide: stream the response so text appears as it arrives.
+        final buffer = StringBuffer();
+        setState(() {
+          _isStreaming = true;
+          _messages.add({'role': 'assistant', 'content': ''});
+        });
+        final msgIndex = _messages.length - 1;
 
+        try {
+          await for (final delta in
+              widget.aiProviderManager.generateHtmlFromPromptStream(prompt)) {
+            buffer.write(delta);
+            if (mounted) {
+              setState(() =>
+                  _messages[msgIndex]['content'] = buffer.toString());
+            }
+          }
+        } finally {
+          if (mounted) setState(() => _isStreaming = false);
+        }
         if (mounted) {
           setState(() {
-            _messages.add({'role': 'assistant', 'content': htmlContent});
+            if (buffer.isEmpty) {
+              _messages[msgIndex]['content'] = 'No response (cancelled?).';
+            }
             _isGenerating = false;
           });
         }
@@ -369,6 +425,189 @@ class _AiChatScreenState extends State<AiChatScreen> {
         });
       }
     }
+  }
+
+  // ---- Outline mode ----
+
+  Future<void> _generateWithOutline(String topic) async {
+    setState(() {
+      _messages.add({'role': 'user', 'content': topic});
+      _isGenerating = true;
+    });
+
+    List<Map<String, dynamic>> outline;
+    try {
+      outline = await widget.aiProviderManager.generateOutline(topic);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _messages
+              .add({'role': 'assistant', 'content': 'Error: ${e.toString()}'});
+          _isGenerating = false;
+        });
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _isGenerating = false);
+
+    final confirmed = await _showOutlineEditor(outline);
+    if (confirmed == null || confirmed.isEmpty || !mounted) return;
+
+    // Generate slides sequentially with a progress message.
+    setState(() {
+      _isGenerating = true;
+      _messages.add({
+        'role': 'assistant',
+        'content': 'Generating 0/${confirmed.length} slides from outline...'
+      });
+    });
+    final progressIndex = _messages.length - 1;
+    final state = Provider.of<PresentationState>(context, listen: false);
+
+    var generated = 0;
+    for (final entry in confirmed) {
+      try {
+        final html = await widget.aiProviderManager
+            .generateSlideFromOutline(topic, entry);
+        state.addSlide(Slide(
+          title: (entry['title'] ?? 'Untitled').toString(),
+          htmlContent: html,
+        ));
+        generated++;
+      } catch (e) {
+        if (mounted) {
+          setState(() => _messages.add({
+                'role': 'assistant',
+                'content': 'Error on "${entry['title']}": $e'
+              }));
+        }
+        break;
+      }
+      if (mounted) {
+        setState(() => _messages[progressIndex]['content'] =
+            'Generating $generated/${confirmed.length} slides from outline...');
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _messages[progressIndex]['content'] =
+            'Added $generated slide(s) from the outline to your presentation.';
+        _isGenerating = false;
+      });
+    }
+  }
+
+  /// Show the editable outline; returns confirmed entries or null.
+  Future<List<Map<String, dynamic>>?> _showOutlineEditor(
+      List<Map<String, dynamic>> outline) {
+    final entries = outline
+        .map((e) => {
+              'title': TextEditingController(text: e['title'].toString()),
+              'bullets': TextEditingController(
+                  text: ((e['bullets'] as List?) ?? const []).join('; ')),
+            })
+        .toList();
+    // Keep every controller (including removed entries) for disposal.
+    final allControllers = [
+      for (final e in entries) ...[
+        e['title'] as TextEditingController,
+        e['bullets'] as TextEditingController,
+      ]
+    ];
+
+    return showDialog<List<Map<String, dynamic>>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Outline (${entries.length} slides)'),
+          content: SizedBox(
+            width: 520,
+            height: 420,
+            child: ListView.builder(
+              itemCount: entries.length,
+              itemBuilder: (context, index) {
+                final entry = entries[index];
+                return Card(
+                  margin: const EdgeInsets.symmetric(vertical: 6),
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller:
+                                    entry['title'] as TextEditingController,
+                                decoration: InputDecoration(
+                                  labelText: 'Slide ${index + 1} title',
+                                  isDense: true,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 18),
+                              tooltip: 'Remove slide',
+                              onPressed: entries.length > 1
+                                  ? () => setDialogState(
+                                      () => entries.removeAt(index))
+                                  : null,
+                            ),
+                          ],
+                        ),
+                        TextField(
+                          controller:
+                              entry['bullets'] as TextEditingController,
+                          decoration: const InputDecoration(
+                            labelText: 'Bullet points (separate with ;)',
+                            isDense: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              icon: const Icon(Icons.auto_awesome, size: 18),
+              label: const Text('Generate Slides'),
+              onPressed: () {
+                final confirmed = entries
+                    .map((e) => {
+                          'title':
+                              (e['title'] as TextEditingController).text.trim(),
+                          'bullets': (e['bullets'] as TextEditingController)
+                              .text
+                              .split(';')
+                              .map((b) => b.trim())
+                              .where((b) => b.isNotEmpty)
+                              .toList(),
+                        })
+                    .where((e) => (e['title'] as String).isNotEmpty)
+                    .toList();
+                Navigator.pop(context, confirmed);
+              },
+            ),
+          ],
+        ),
+      ),
+    ).whenComplete(() {
+      // Delay disposal past the dialog's closing animation.
+      Future.delayed(const Duration(milliseconds: 400), () {
+        for (final c in allControllers) {
+          c.dispose();
+        }
+      });
+    });
   }
 
   void _showSystemPromptEditor() {
@@ -476,7 +715,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: models.contains(selectedModel) ? selectedModel : models.first,
+                  initialValue: models.contains(selectedModel) ? selectedModel : models.first,
                   decoration: const InputDecoration(
                     labelText: 'Active Model',
                     border: OutlineInputBorder(),

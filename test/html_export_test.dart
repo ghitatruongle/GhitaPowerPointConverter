@@ -10,7 +10,8 @@ void main() {
   const MethodChannel channel = MethodChannel('plugins.flutter.io/path_provider');
   final List<MethodCall> log = <MethodCall>[];
 
-  channel.setMockMethodCallHandler((MethodCall call) async {
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(channel, (MethodCall call) async {
     log.add(call);
     if (call.method == 'getApplicationDocumentsDirectory') {
       // Return a real existing temp directory

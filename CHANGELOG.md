@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.3.0] - 2026-07-30 — Siêu cập nhật (Mega Update)
+
+### 🧱 Typed Slide Model
+- New `Slide` model (`lib/models/slide.dart`): `title`, `htmlContent`, `notes`, per-slide `effect` override, `timestamp`
+- `SlideEffect` enum moved to `lib/models/slide.dart` (re-exported from `presentation_state.dart` for compatibility)
+- `PresentationState` now holds `List<Slide>`; legacy persisted slide maps still load correctly
+
+### 🐛 Critical PPTX Bug Fixes
+- Fixed duplicated `</a:txBody>` closing tag in table cells (produced invalid OOXML)
+- Fixed bullet character written as literal `\u2022` escape instead of the real • glyph
+- Fixed table `<p:xfrm>` closed with mismatched `</a:xfrm>` tag
+- Fixed multi-slide JSON extraction truncating nested arrays (now uses balanced-bracket scanning)
+
+### 📊 PPTX Engine — Major Upgrade
+- **Images**: `<img>` with base64 data URIs or local file paths embedded as `ppt/media/*` with `<p:pic>` shapes, auto-scaled to fit
+- **Rich text styling**: inline `color`, `background-color` (highlight), `font-size` (px/pt/em), `font-family`, `text-align`, plus `<u>` underline and `<s>/<del>` strikethrough
+- **Speaker notes**: from the new notes field or `<aside class="notes">` → proper `notesSlide` parts + notes master
+- **Hyperlinks**: `<a href>` → `<a:hlinkClick>` with external relationships
+- **Per-slide transitions**: each slide can override the deck-wide effect
+- **Office theme**: `ppt/theme/theme1.xml`, `docProps/core.xml`/`app.xml`, master/layout relationship chain — no more PowerPoint repair prompts
+- Content shapes now flow vertically instead of overlapping; wider content area in 16:9
+
+### 📄 PDF Export (new)
+- `PdfExportService`: one landscape page per slide (16:9 or 4:3), sharing the exact HTML parsing with the PPTX engine
+- Supports text styling, lists, tables, images, background colors with automatic contrast text
+- **Unicode/Vietnamese text support**: embeds a Windows system font (Segoe UI → Arial → Tahoma fallback) instead of the built-in Helvetica, so diacritics render correctly
+- Export dialog now offers PPTX / HTML / PDF
+
+### 🤖 AI — Gemini, Ollama, Streaming, Outline
+- **Google Gemini** provider (`gemini` format type, `x-goog-api-key`, `systemInstruction`)
+- **Ollama (local)** template — API key not required for localhost endpoints
+- **Streaming responses** (SSE) for OpenAI/Anthropic/Gemini with a Stop button
+- **Outline mode**: AI drafts an editable outline (titles + bullets), then generates each slide with progress
+
+### 🖥️ In-App Preview & Present Mode (new)
+- Live slide preview beside the HTML editor (WebView2, 500 ms debounce)
+- Per-slide preview dialog from the slide list
+- **Present mode**: fullscreen in-app playback of the HTML deck (arrow keys, progress bar, Esc to exit)
+- Graceful fallback when the WebView2 runtime is missing
+
+### ✍️ Editor
+- Speaker notes field and per-slide transition picker
+- Fixed export dialog running the export twice
+
+### 🧪 Testing & Quality
+- 74 tests passing (up from 19): XML regression tests (incl. UTF-8 ZIP header sizes with Vietnamese content), image embedding, styling, notes, hyperlinks, per-slide transitions, package structure, PDF export incl. Vietnamese font embedding, SSE parsing, outline JSON, Slide model round-trips
+- Deep review pass: fixed UTF-8 byte-length ZIP headers, network errors no longer swallowed as stream cancels, `<img>` inside `<p>` now exported, Stop button only shown when cancellable, outline dialog controller leaks fixed
+- `flutter analyze`: 0 issues (cleaned all deprecations and icon tree-shake warnings)
+
+### 🔧 Dependencies
+- Added `webview_windows`, `image`; dev: `xml`
+- Removed unused `dart_openai`, `webview_flutter`, `js`
+- Version bump to `0.3.0+1`
+
+## [0.1.5] - 2026-07-30 (previously undocumented)
+
+### Added
+- **Slide templates**: 5 bundled HTML templates (Business, Creative, Academic, Marketing, Minimal) with recommended transition effects, icons and accent colors (`TemplateService`, `SlideTemplate`, template gallery dialog)
+- **HTML export**: standalone browser presentation with keyboard/touch navigation, progress bar, fullscreen and per-slide background colors (`HtmlExportService`)
+- Tests: `html_export_test.dart`, `slide_template_test.dart`
+
 ## [0.0.5] - 2026-07-30 — Major Upgrade
 
 ### 🐛 Critical Bug Fixes

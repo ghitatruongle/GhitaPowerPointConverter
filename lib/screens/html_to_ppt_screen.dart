@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:html/parser.dart' as html_parser;
@@ -5,6 +6,8 @@ import 'package:provider/provider.dart';
 import '../providers/presentation_state.dart';
 import '../services/template_service.dart';
 import '../models/slide_template.dart';
+import 'present_screen.dart';
+import 'widgets/slide_preview.dart';
 
 class HtmlToPPTScreen extends StatefulWidget {
   const HtmlToPPTScreen({super.key});
@@ -13,29 +16,48 @@ class HtmlToPPTScreen extends StatefulWidget {
   State<HtmlToPPTScreen> createState() => _HtmlToPPTScreenState();
 }
 
-enum ExportFormat { pptx, html }
+enum ExportFormat { pptx, html, pdf }
 
 class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
   final _htmlController = TextEditingController();
   final _titleController = TextEditingController();
+  final _notesController = TextEditingController();
   bool _isLoading = false;
   final FocusNode _focusNode = FocusNode();
 
   // Editing mode: when editing an existing slide, store its index
   int? _editingIndex;
 
+  // Per-slide transition override selected in the editor (null = deck effect)
+  SlideEffect? _slideEffectOverride;
+
+  // Live preview state (debounced from the HTML editor)
+  Timer? _previewTimer;
+  String _previewHtml = '';
+
   @override
   void initState() {
     super.initState();
     _titleController.text = 'New Slide';
+    _htmlController.addListener(_schedulePreviewUpdate);
   }
 
   @override
   void dispose() {
+    _previewTimer?.cancel();
     _htmlController.dispose();
     _titleController.dispose();
+    _notesController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _schedulePreviewUpdate() {
+    _previewTimer?.cancel();
+    _previewTimer = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      setState(() => _previewHtml = _htmlController.text);
+    });
   }
 
   // ---- Input Validation ----
@@ -94,15 +116,16 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
         title = 'Untitled Slide';
       }
 
-      final slideMap = {
-        'title': title,
-        'htmlContent': sanitizedHtml,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
+      final slide = Slide(
+        title: title,
+        htmlContent: sanitizedHtml,
+        notes: _notesController.text.trim(),
+        effect: _slideEffectOverride,
+      );
 
       if (_editingIndex != null) {
         // Update existing slide
-        state.updateSlide(_editingIndex!, slideMap);
+        state.updateSlide(_editingIndex!, slide);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Slide updated!')),
@@ -110,7 +133,7 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
         }
       } else {
         // Add new slide
-        state.addSlide(slideMap);
+        state.addSlide(slide);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Slide added successfully!')),
@@ -137,10 +160,12 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
     if (index < 0 || index >= state.slides.length) return;
 
     final slide = state.slides[index];
-    _htmlController.text = slide['htmlContent'] ?? '';
-    _titleController.text = slide['title'] ?? '';
+    _htmlController.text = slide.htmlContent;
+    _titleController.text = slide.title;
+    _notesController.text = slide.notes;
     setState(() {
       _editingIndex = index;
+      _slideEffectOverride = slide.effect;
     });
   }
 
@@ -149,7 +174,11 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
   void _clearEditor() {
     _htmlController.clear();
     _titleController.text = 'New Slide';
-    setState(() => _editingIndex = null);
+    _notesController.clear();
+    setState(() {
+      _editingIndex = null;
+      _slideEffectOverride = null;
+    });
   }
 
   // ---- Template Gallery ----
@@ -337,8 +366,7 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
 
   Future<void> _exportToPPT() async {
     final fileName = await _showExportDialog();
-    if (fileName == null) return; // user cancelled
-    await _performExport(fileName, ExportFormat.pptx);
+    if (fileName == null) return; // user cancelled (export runs from dialog)
   }
 
   Future<String?> _showExportDialog() async {
@@ -367,15 +395,20 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
                     label: Text('HTML'),
                     icon: Icon(Icons.html, size: 18),
                   ),
+                  ButtonSegment(
+                    value: ExportFormat.pdf,
+                    label: Text('PDF'),
+                    icon: Icon(Icons.picture_as_pdf, size: 18),
+                  ),
                 ],
                 selected: {selectedFormat},
                 onSelectionChanged: (Set<ExportFormat> newSelection) {
                   setDialogState(() {
                     selectedFormat = newSelection.first;
-                    if (selectedFormat == ExportFormat.html) {
-                      nameController.text = 'presentation';
-                    } else {
+                    if (selectedFormat == ExportFormat.pptx) {
                       nameController.text = 'Presentation_Output';
+                    } else {
+                      nameController.text = 'presentation';
                     }
                   });
                 },
@@ -388,9 +421,11 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
                   hintText: selectedFormat == ExportFormat.pptx
                       ? 'My_Presentation'
                       : 'presentation',
-                  suffixText: selectedFormat == ExportFormat.pptx
-                      ? '.pptx'
-                      : '.html',
+                  suffixText: switch (selectedFormat) {
+                    ExportFormat.pptx => '.pptx',
+                    ExportFormat.html => '.html',
+                    ExportFormat.pdf => '.pdf',
+                  },
                   border: const OutlineInputBorder(),
                 ),
                 autofocus: true,
@@ -414,9 +449,11 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
                 Navigator.pop(context, name);
                 _performExport(name, selectedFormat);
               },
-              child: Text(selectedFormat == ExportFormat.pptx
-                  ? 'Export PPTX'
-                  : 'Export HTML'),
+              child: Text(switch (selectedFormat) {
+                ExportFormat.pptx => 'Export PPTX',
+                ExportFormat.html => 'Export HTML',
+                ExportFormat.pdf => 'Export PDF',
+              }),
             ),
           ],
         ),
@@ -438,10 +475,16 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
 
     try {
       String exportedPath;
-      if (format == ExportFormat.pptx) {
-        exportedPath = await presentationState.exportToPPT(fileName);
-      } else {
-        exportedPath = await presentationState.exportToHtml(fileName);
+      switch (format) {
+        case ExportFormat.pptx:
+          exportedPath = await presentationState.exportToPPT(fileName);
+          break;
+        case ExportFormat.html:
+          exportedPath = await presentationState.exportToHtml(fileName);
+          break;
+        case ExportFormat.pdf:
+          exportedPath = await presentationState.exportToPdf(fileName);
+          break;
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -526,48 +569,108 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: TextField(
-                      controller: _titleController,
-                      decoration: const InputDecoration(
-                        labelText: 'Slide / Presentation Title',
-                        border: OutlineInputBorder(),
-                      ),
+                    child: Column(
+                      children: [
+                        TextField(
+                          controller: _titleController,
+                          decoration: const InputDecoration(
+                            labelText: 'Slide / Presentation Title',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _notesController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Speaker Notes (optional)',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            DropdownButton<SlideEffect?>(
+                              value: _slideEffectOverride,
+                              hint: const Text('Deck effect',
+                                  style: TextStyle(fontSize: 13)),
+                              items: [
+                                const DropdownMenuItem<SlideEffect?>(
+                                  value: null,
+                                  child: Text('Deck effect',
+                                      style: TextStyle(fontSize: 13)),
+                                ),
+                                ...SlideEffect.values.map(
+                                  (e) => DropdownMenuItem<SlideEffect?>(
+                                    value: e,
+                                    child: Text(_effectName(e),
+                                        style: const TextStyle(fontSize: 13)),
+                                  ),
+                                ),
+                              ],
+                              onChanged: (val) => setState(
+                                  () => _slideEffectOverride = val),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
 
                 const SizedBox(height: 12),
 
-                // HTML editor
+                // HTML editor + live preview
                 Expanded(
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Stack(
-                        children: [
-                          TextFormField(
-                            controller: _htmlController,
-                            maxLines: null,
-                            expands: true,
-                            decoration: const InputDecoration(
-                              labelText: 'HTML Content',
-                              border: InputBorder.none,
-                              hintText:
-                                  '<h1>Title</h1><p>Content...</p><ul><li>Item</li></ul>',
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: Stack(
+                              children: [
+                                TextFormField(
+                                  controller: _htmlController,
+                                  maxLines: null,
+                                  expands: true,
+                                  decoration: const InputDecoration(
+                                    labelText: 'HTML Content',
+                                    border: InputBorder.none,
+                                    hintText:
+                                        '<h1>Title</h1><p>Content...</p><ul><li>Item</li></ul>',
+                                  ),
+                                  keyboardType: TextInputType.multiline,
+                                ),
+                                if (_isLoading)
+                                  Positioned.fill(
+                                    child: Container(
+                                      color: Colors.black12,
+                                      child: const Center(
+                                          child: CircularProgressIndicator()),
+                                    ),
+                                  ),
+                              ],
                             ),
-                            keyboardType: TextInputType.multiline,
                           ),
-                          if (_isLoading)
-                            Positioned.fill(
-                              child: Container(
-                                color: Colors.black12,
-                                child: const Center(
-                                    child: CircularProgressIndicator()),
-                              ),
-                            ),
-                        ],
+                        ),
                       ),
-                    ),
+                      if (_previewHtml.trim().isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Card(
+                            clipBehavior: Clip.antiAlias,
+                            child: SlidePreview(
+                              title: _titleController.text,
+                              html: _previewHtml,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
 
@@ -599,6 +702,19 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
                       icon: const Icon(Icons.download),
                       label: const Text('Export'),
                     ),
+                    if (slides.isNotEmpty)
+                      FilledButton.icon(
+                        onPressed: _isLoading
+                            ? null
+                            : () {
+                                Navigator.of(context).push(MaterialPageRoute(
+                                  builder: (_) =>
+                                      PresentScreen(state: presentationState),
+                                ));
+                              },
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Present'),
+                      ),
                     if (slides.isNotEmpty)
                       TextButton.icon(
                         onPressed: _confirmClearAll,
@@ -653,7 +769,7 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
   }
 
   Widget _buildSlidesList(
-      PresentationState state, List<Map<String, dynamic>> slides) {
+      PresentationState state, List<Slide> slides) {
     if (slides.isEmpty) {
       return Center(
         child: Column(
@@ -703,11 +819,11 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
       },
       itemBuilder: (context, index) {
         final slide = slides[index];
-        final String title = slide['title'] ?? 'Slide ${index + 1}';
-        final String htmlContent = slide['htmlContent'] ?? '';
+        final String title = slide.title;
+        final String htmlContent = slide.htmlContent;
 
         return Card(
-          key: ValueKey('slide_${slide['timestamp']}_$index'),
+          key: ValueKey('slide_${slide.timestamp}_$index'),
           margin: const EdgeInsets.symmetric(vertical: 4),
           child: ListTile(
             leading: ReorderableDragStartListener(
@@ -746,6 +862,11 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
+                  icon: const Icon(Icons.visibility_outlined, size: 20),
+                  tooltip: 'Preview slide',
+                  onPressed: () => _previewSlide(slide),
+                ),
+                IconButton(
                   icon: const Icon(Icons.edit_outlined, size: 20),
                   tooltip: 'Edit slide',
                   onPressed: () => _editSlide(index),
@@ -760,17 +881,16 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
                   tooltip: 'Delete slide',
                   onPressed: () {
                     state.removeSlide(index);
-                    final deletedSlide = Map<String, dynamic>.from(slide);
+                    final deletedSlide = slide;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text('Deleted "$title"'),
                         action: SnackBarAction(
                           label: 'Undo',
                           onPressed: () {
-                            final restored = Map<String, dynamic>.from(deletedSlide)
-                              ..['timestamp'] =
-                                  DateTime.now().millisecondsSinceEpoch;
-                            state.addSlide(restored);
+                            state.addSlide(deletedSlide.copyWith(
+                                timestamp:
+                                    DateTime.now().millisecondsSinceEpoch));
                           },
                         ),
                       ),
@@ -783,6 +903,46 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
           ),
         );
       },
+    );
+  }
+
+  /// Show a rendered preview of a slide in a dialog.
+  void _previewSlide(Slide slide) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: SizedBox(
+          width: 800,
+          height: 480,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(slide.title,
+                          style: Theme.of(context).textTheme.titleMedium,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: SlidePreview(
+                      title: slide.title, html: slide.htmlContent),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

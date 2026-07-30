@@ -25,5 +25,30 @@
     "selectedModel": "claude-3-5-sonnet-20240620",
     "contextWindow": 200000,
     "formatType": "anthropic"
+  },
+  {
+    "id": "gemini_default",
+    "name": "Google Gemini",
+    "baseUrl": "https://generativelanguage.googleapis.com",
+    "availableModels": [
+      "gemini-2.5-flash",
+      "gemini-2.5-pro"
+    ],
+    "selectedModel": "gemini-2.5-flash",
+    "contextWindow": 1000000,
+    "formatType": "gemini"
+  },
+  {
+    "id": "ollama_default",
+    "name": "Ollama (Local)",
+    "baseUrl": "http://localhost:11434/v1",
+    "availableModels": [
+      "llama3.1",
+      "mistral",
+      "qwen2.5"
+    ],
+    "selectedModel": "llama3.1",
+    "contextWindow": 32768,
+    "formatType": "openai"
   }
 ]

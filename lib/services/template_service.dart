@@ -32,10 +32,8 @@ class TemplateService {
               (e) => e.name == meta['recommendedEffect'],
               orElse: () => SlideEffect.none,
             ),
-            icon: IconData(
-              (meta['iconCodePoint'] as int?) ?? 983162,
-              fontFamily: 'MaterialIcons',
-            ),
+            icon: SlideTemplate.iconForCodePoint(
+                meta['iconCodePoint'] as int?),
             accentColor: Color((meta['accentColor'] as int?) ?? 0xFF2196F3),
           ));
         } catch (e) {

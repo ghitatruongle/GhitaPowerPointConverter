@@ -13,7 +13,7 @@ class AIProviderConfig {
   final List<String> availableModels;
   final String selectedModel;
   final int contextWindow;
-  final String formatType; // openai, anthropic, custom
+  final String formatType; // openai, anthropic, gemini, custom
   final double temperature;
   final int maxTokens;
 
@@ -128,6 +128,49 @@ class AIProviderConfig {
       temperature: 0.7,
       maxTokens: 4096,
     );
+  }
+
+  static AIProviderConfig geminiDefault() {
+    return AIProviderConfig(
+      id: 'gemini_default',
+      name: 'Google Gemini',
+      baseUrl: 'https://generativelanguage.googleapis.com',
+      apiKey: '',
+      availableModels: [
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
+      ],
+      selectedModel: 'gemini-2.5-flash',
+      contextWindow: 1000000,
+      formatType: 'gemini',
+      temperature: 0.7,
+      maxTokens: 8192,
+    );
+  }
+
+  static AIProviderConfig ollamaDefault() {
+    return AIProviderConfig(
+      id: 'ollama_default',
+      name: 'Ollama (Local)',
+      baseUrl: 'http://localhost:11434/v1',
+      apiKey: '',
+      availableModels: [
+        'llama3.1',
+        'mistral',
+        'qwen2.5',
+      ],
+      selectedModel: 'llama3.1',
+      contextWindow: 32768,
+      formatType: 'openai',
+      temperature: 0.7,
+      maxTokens: 4096,
+    );
+  }
+
+  /// Whether this provider needs an API key (local endpoints don't).
+  bool get requiresApiKey {
+    final host = Uri.tryParse(baseUrl)?.host ?? '';
+    return host != 'localhost' && host != '127.0.0.1' && host != '0.0.0.0';
   }
 
   /// Validate that this provider has all required non-secret fields.
@@ -315,12 +358,13 @@ class AIProviderManager with ChangeNotifier {
 
   // ---- Single slide generation ----
 
-  Future<String> generateHtmlFromPrompt(String prompt) async {
+  /// Validate the selected provider is ready for a call; returns it.
+  AIProviderConfig _ensureReady() {
     final provider = _selectedProvider;
     if (provider == null) {
       throw Exception('No provider selected. Please configure a provider in settings.');
     }
-    if (provider.apiKey.isEmpty) {
+    if (provider.apiKey.isEmpty && provider.requiresApiKey) {
       throw Exception(
         'API key not set for "${provider.name}". Enter it in Provider Settings.',
       );
@@ -328,6 +372,11 @@ class AIProviderManager with ChangeNotifier {
     if (!provider.isValid) {
       throw Exception('Provider "${provider.name}" is not fully configured.');
     }
+    return provider;
+  }
+
+  Future<String> generateHtmlFromPrompt(String prompt) async {
+    final provider = _ensureReady();
 
     try {
       switch (provider.formatType) {
@@ -335,6 +384,9 @@ class AIProviderManager with ChangeNotifier {
           return await _callOpenAI(provider, prompt);
         case 'anthropic':
           return await _callAnthropic(provider, prompt);
+        case 'gemini':
+          return await _callGemini(provider,
+              'Generate single slide HTML presentation content for: $prompt', _systemPrompt);
         case 'custom':
           return await _callOpenAI(provider, prompt);
         default:
@@ -350,16 +402,7 @@ class AIProviderManager with ChangeNotifier {
   /// Generate multiple slides from a single prompt.
   /// Returns a list of slide maps with 'title' and 'htmlContent' keys.
   Future<List<Map<String, String>>> generateMultipleSlides(String topic, {int slideCount = 3}) async {
-    final provider = _selectedProvider;
-    if (provider == null) {
-      throw Exception('No provider selected.');
-    }
-    if (provider.apiKey.isEmpty) {
-      throw Exception('API key not set for "${provider.name}".');
-    }
-    if (!provider.isValid) {
-      throw Exception('Provider "${provider.name}" is not fully configured.');
-    }
+    final provider = _ensureReady();
 
     final multiSlideSystemPrompt = '$_systemPrompt\n'
         'Return a JSON array of slide objects. Each object must have:\n'
@@ -372,11 +415,204 @@ class AIProviderManager with ChangeNotifier {
       final result = switch (provider.formatType) {
         'openai' || 'custom' => await _callOpenAIMulti(provider, topic, multiSlideSystemPrompt),
         'anthropic' => await _callAnthropicMulti(provider, topic, multiSlideSystemPrompt),
+        'gemini' => await _callGemini(provider, topic, multiSlideSystemPrompt),
         _ => await _callOpenAIMulti(provider, topic, multiSlideSystemPrompt),
       };
       return _parseSlideJson(result, slideCount);
     } catch (e) {
       throw Exception('Failed to generate slides: $e');
+    }
+  }
+
+  // ---- Outline mode ----
+
+  /// Generate a presentation outline: list of {title, bullets} entries.
+  Future<List<Map<String, dynamic>>> generateOutline(String topic,
+      {int slideCount = 5}) async {
+    final provider = _ensureReady();
+
+    final outlinePrompt =
+        'You are a presentation planner. Create an outline for a presentation.\n'
+        'Return ONLY a valid JSON array with exactly $slideCount objects. Each object has:\n'
+        '  - "title": slide title (string)\n'
+        '  - "bullets": array of 2-4 short bullet point strings\n'
+        'No markdown, no extra text.';
+
+    final raw = switch (provider.formatType) {
+      'openai' || 'custom' => await _callOpenAIMulti(provider, topic, outlinePrompt),
+      'anthropic' => await _callAnthropicMulti(provider, topic, outlinePrompt),
+      'gemini' => await _callGemini(provider, topic, outlinePrompt),
+      _ => await _callOpenAIMulti(provider, topic, outlinePrompt),
+    };
+    return parseOutlineJson(raw);
+  }
+
+  /// Parse outline JSON (public for unit testing).
+  static List<Map<String, dynamic>> parseOutlineJson(String raw) {
+    final jsonStr = _extractJsonArrayStatic(raw) ?? raw;
+    try {
+      final List<dynamic> entries = jsonDecode(jsonStr);
+      return entries
+          .whereType<Map<String, dynamic>>()
+          .map((e) => {
+                'title': (e['title'] ?? 'Untitled').toString(),
+                'bullets': ((e['bullets'] as List?) ?? const [])
+                    .map((b) => b.toString())
+                    .toList(),
+              })
+          .toList();
+    } catch (_) {
+      throw Exception('Could not parse outline from AI response.');
+    }
+  }
+
+  /// Generate the HTML for a single slide from an outline entry.
+  Future<String> generateSlideFromOutline(
+      String topic, Map<String, dynamic> outlineEntry) async {
+    final title = (outlineEntry['title'] ?? '').toString();
+    final bullets =
+        ((outlineEntry['bullets'] as List?) ?? const []).join('; ');
+    final prompt =
+        'Topic: $topic. Create the slide titled "$title" covering: $bullets';
+    return generateHtmlFromPrompt(prompt);
+  }
+
+  // ---- Streaming generation ----
+
+  http.Client? _streamClient;
+  bool _streamCancelled = false;
+
+  /// Cancel an in-flight streaming request, if any.
+  void cancelStream() {
+    _streamCancelled = true;
+    _streamClient?.close();
+    _streamClient = null;
+  }
+
+  /// Generate HTML for a single slide, streaming text chunks as they arrive.
+  Stream<String> generateHtmlFromPromptStream(String prompt) async* {
+    final provider = _ensureReady();
+    final client = http.Client();
+    _streamClient = client;
+    _streamCancelled = false;
+
+    try {
+      final http.Request request;
+      switch (provider.formatType) {
+        case 'anthropic':
+          request = http.Request(
+              'POST', Uri.parse('${provider.baseUrl}/v1/messages'))
+            ..headers.addAll({
+              'x-api-key': provider.apiKey,
+              'anthropic-version': '2023-06-01',
+              'Content-Type': 'application/json',
+            })
+            ..body = jsonEncode({
+              'model': provider.selectedModel,
+              'max_tokens': provider.maxTokens,
+              'system': _systemPrompt,
+              'stream': true,
+              'messages': [
+                {
+                  'role': 'user',
+                  'content':
+                      'Generate presentation HTML slide content for: $prompt',
+                },
+              ],
+            });
+          break;
+        case 'gemini':
+          request = http.Request(
+              'POST',
+              Uri.parse(
+                  '${provider.baseUrl}/v1beta/models/${provider.selectedModel}:streamGenerateContent?alt=sse'))
+            ..headers.addAll({
+              'x-goog-api-key': provider.apiKey,
+              'Content-Type': 'application/json',
+            })
+            ..body = jsonEncode(_geminiBody(provider,
+                'Generate single slide HTML presentation content for: $prompt', _systemPrompt));
+          break;
+        default: // openai / custom
+          request = http.Request(
+              'POST', Uri.parse('${provider.baseUrl}/v1/chat/completions'))
+            ..headers.addAll({
+              'Authorization': 'Bearer ${provider.apiKey}',
+              'Content-Type': 'application/json',
+            })
+            ..body = jsonEncode({
+              'model': provider.selectedModel,
+              'stream': true,
+              'messages': [
+                {'role': 'system', 'content': _systemPrompt},
+                {
+                  'role': 'user',
+                  'content':
+                      'Generate single slide HTML presentation content for: $prompt',
+                },
+              ],
+              'temperature': provider.temperature,
+              'max_tokens': provider.maxTokens,
+            });
+      }
+
+      final response = await client.send(request);
+      if (response.statusCode != 200) {
+        final body = await response.stream.bytesToString();
+        throw Exception(_friendlyErrorMessage(response.statusCode, body));
+      }
+
+      // Parse SSE lines across chunk boundaries.
+      var buffer = '';
+      await for (final chunk in response.stream.transform(utf8.decoder)) {
+        buffer += chunk;
+        final lines = buffer.split('\n');
+        buffer = lines.removeLast(); // keep incomplete tail
+        for (final line in lines) {
+          final delta = parseStreamLine(provider.formatType, line);
+          if (delta != null && delta.isNotEmpty) yield delta;
+        }
+      }
+      final delta = parseStreamLine(provider.formatType, buffer);
+      if (delta != null && delta.isNotEmpty) yield delta;
+    } on http.ClientException {
+      // ClientException also wraps genuine network failures (connection
+      // refused, reset mid-stream) — only swallow it for an explicit cancel.
+      if (!_streamCancelled) rethrow;
+    } finally {
+      if (identical(_streamClient, client)) _streamClient = null;
+      client.close();
+    }
+  }
+
+  /// Parse a single SSE line into a text delta (public for unit testing).
+  /// Returns null when the line carries no text.
+  static String? parseStreamLine(String formatType, String line) {
+    final trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) return null;
+    final payload = trimmed.substring(5).trim();
+    if (payload.isEmpty || payload == '[DONE]') return null;
+    try {
+      final data = jsonDecode(payload);
+      switch (formatType) {
+        case 'anthropic':
+          if (data['type'] == 'content_block_delta') {
+            return data['delta']?['text'] as String?;
+          }
+          return null;
+        case 'gemini':
+          final candidates = data['candidates'] as List?;
+          if (candidates == null || candidates.isEmpty) return null;
+          final parts = candidates[0]['content']?['parts'] as List?;
+          if (parts == null || parts.isEmpty) return null;
+          return parts[0]['text'] as String?;
+        default: // openai / custom
+          final choices = data['choices'] as List?;
+          if (choices == null || choices.isEmpty) return null;
+          return choices[0]['delta']?['content'] as String?;
+      }
+    } catch (_) {
+      return null;
     }
   }
 
@@ -408,16 +644,38 @@ class AIProviderManager with ChangeNotifier {
   }
 
   /// Extract a JSON array from text that may contain markdown fences or extra text.
-  String? _extractJsonArray(String text) {
+  String? _extractJsonArray(String text) => _extractJsonArrayStatic(text);
+
+  static String? _extractJsonArrayStatic(String text) {
     // Try to find content between ```json and ``` markers
     final codeBlockMatch = RegExp(r'```(?:json)?\s*([\s\S]*?)```').firstMatch(text);
     if (codeBlockMatch != null) {
       return codeBlockMatch.group(1)?.trim();
     }
-    // Try to find content between [ and ]
-    final bracketMatch = RegExp(r'(\[[\s\S]*?\])').firstMatch(text);
-    if (bracketMatch != null) {
-      return bracketMatch.group(1);
+    // Scan for a balanced top-level JSON array (handles nested arrays and
+    // strings, which a non-greedy regex would truncate).
+    final start = text.indexOf('[');
+    if (start == -1) return null;
+    var depth = 0;
+    var inString = false;
+    for (var i = start; i < text.length; i++) {
+      final c = text[i];
+      if (inString) {
+        if (c == r'\') {
+          i++; // skip escaped character
+        } else if (c == '"') {
+          inString = false;
+        }
+        continue;
+      }
+      if (c == '"') {
+        inString = true;
+      } else if (c == '[') {
+        depth++;
+      } else if (c == ']') {
+        depth--;
+        if (depth == 0) return text.substring(start, i + 1);
+      }
     }
     return null;
   }
@@ -552,6 +810,62 @@ class AIProviderManager with ChangeNotifier {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['content'][0]['text'] ?? '';
+      } else {
+        throw Exception(_friendlyErrorMessage(response.statusCode, response.body));
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  // ---- Gemini calls ----
+
+  static Map<String, dynamic> _geminiBody(
+      AIProviderConfig config, String userText, String systemPrompt) {
+    return {
+      'systemInstruction': {
+        'parts': [
+          {'text': systemPrompt}
+        ]
+      },
+      'contents': [
+        {
+          'role': 'user',
+          'parts': [
+            {'text': userText}
+          ]
+        }
+      ],
+      'generationConfig': {
+        'temperature': config.temperature,
+        'maxOutputTokens': config.maxTokens,
+      },
+    };
+  }
+
+  Future<String> _callGemini(
+      AIProviderConfig config, String userText, String systemPrompt) async {
+    final client = http.Client();
+    try {
+      final response = await client.post(
+        Uri.parse(
+            '${config.baseUrl}/v1beta/models/${config.selectedModel}:generateContent'),
+        headers: {
+          'x-goog-api-key': config.apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(_geminiBody(config, userText, systemPrompt)),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final candidates = data['candidates'] as List?;
+        if (candidates == null || candidates.isEmpty) {
+          throw Exception('Gemini returned no candidates.');
+        }
+        final parts = candidates[0]['content']?['parts'] as List?;
+        if (parts == null || parts.isEmpty) return '';
+        return parts[0]['text'] ?? '';
       } else {
         throw Exception(_friendlyErrorMessage(response.statusCode, response.body));
       }
