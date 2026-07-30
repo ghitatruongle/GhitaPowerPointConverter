@@ -13,6 +13,8 @@ class AIProviderConfig {
   final String model;
   final int contextWindow;
   final String formatType; // openai, anthropic, custom
+  final double temperature;
+  final int maxTokens;
 
   AIProviderConfig({
     required this.id,
@@ -22,6 +24,8 @@ class AIProviderConfig {
     required this.model,
     required this.contextWindow,
     this.formatType = 'openai',
+    this.temperature = 0.7,
+    this.maxTokens = 4096,
   });
 
   AIProviderConfig copyWith({
@@ -32,6 +36,8 @@ class AIProviderConfig {
     String? model,
     int? contextWindow,
     String? formatType,
+    double? temperature,
+    int? maxTokens,
   }) {
     return AIProviderConfig(
       id: id ?? this.id,
@@ -41,6 +47,8 @@ class AIProviderConfig {
       model: model ?? this.model,
       contextWindow: contextWindow ?? this.contextWindow,
       formatType: formatType ?? this.formatType,
+      temperature: temperature ?? this.temperature,
+      maxTokens: maxTokens ?? this.maxTokens,
     );
   }
 
@@ -53,6 +61,8 @@ class AIProviderConfig {
       'model': model,
       'contextWindow': contextWindow,
       'formatType': formatType,
+      'temperature': temperature,
+      'maxTokens': maxTokens,
     };
   }
 
@@ -65,6 +75,8 @@ class AIProviderConfig {
       model: map['model'] ?? '',
       contextWindow: map['contextWindow'] ?? 4096,
       formatType: map['formatType'] ?? 'openai',
+      temperature: (map['temperature'] as num?)?.toDouble() ?? 0.7,
+      maxTokens: map['maxTokens'] as int? ?? 4096,
     );
   }
 
@@ -77,6 +89,8 @@ class AIProviderConfig {
       model: 'gpt-3.5-turbo',
       contextWindow: 16385,
       formatType: 'openai',
+      temperature: 0.7,
+      maxTokens: 4096,
     );
   }
 
@@ -89,6 +103,15 @@ class AIProviderManager with ChangeNotifier {
   AIProviderConfig? _selectedProvider;
   final ConfigService _configService = ConfigService();
 
+  // Custom system prompt for slide generation
+  String _systemPrompt =
+      'You are an expert in generating presentation HTML slides. '
+      'Return ONLY valid HTML fragment (no markdown, no explanation). '
+      'Use <h1> for title, <p> for paragraphs, <ul>/<li> for lists. '
+      'No external CSS/JS references.';
+
+  String get systemPrompt => _systemPrompt;
+
   List<AIProviderConfig> get providers => _providers;
   AIProviderConfig? get selectedProvider => _selectedProvider;
 
@@ -98,8 +121,7 @@ class AIProviderManager with ChangeNotifier {
       if (_providers.isEmpty) {
         _providers = [AIProviderConfig.defaultProvider()];
       }
-      // After loading providers from SharedPreferences (without keys),
-      // re-inject apiKey from secure storage for each.
+      // Re-inject apiKey from secure storage for each.
       for (var i = 0; i < _providers.length; i++) {
         final p = _providers[i];
         final storedKey = await _configService.loadApiKey(p.id);
@@ -113,12 +135,25 @@ class AIProviderManager with ChangeNotifier {
         (p) => p.id == savedId,
         orElse: () => _providers.first,
       );
+
+      // Load custom system prompt
+      final savedPrompt = await _configService.loadSystemPrompt();
+      if (savedPrompt != null && savedPrompt.isNotEmpty) {
+        _systemPrompt = savedPrompt;
+      }
+
       notifyListeners();
     } catch (e) {
       _providers = [AIProviderConfig.defaultProvider()];
       _selectedProvider = _providers.first;
       notifyListeners();
     }
+  }
+
+  void updateSystemPrompt(String prompt) {
+    _systemPrompt = prompt;
+    unawaited(_configService.saveSystemPrompt(prompt));
+    notifyListeners();
   }
 
   void selectProvider(AIProviderConfig provider) {
@@ -177,6 +212,8 @@ class AIProviderManager with ChangeNotifier {
     notifyListeners();
   }
 
+  // ---- Single slide generation ----
+
   Future<String> generateHtmlFromPrompt(String prompt) async {
     final provider = _selectedProvider;
     if (provider == null) {
@@ -207,6 +244,85 @@ class AIProviderManager with ChangeNotifier {
     }
   }
 
+  // ---- Multi-slide generation ----
+
+  /// Generate multiple slides from a single prompt.
+  /// Returns a list of slide maps with 'title' and 'htmlContent' keys.
+  Future<List<Map<String, String>>> generateMultipleSlides(String topic, {int slideCount = 3}) async {
+    final provider = _selectedProvider;
+    if (provider == null) {
+      throw Exception('No provider selected.');
+    }
+    if (provider.apiKey.isEmpty) {
+      throw Exception('API key not set for "${provider.name}".');
+    }
+    if (!provider.isValid) {
+      throw Exception('Provider "${provider.name}" is not fully configured.');
+    }
+
+    final multiSlideSystemPrompt = '$_systemPrompt\n'
+        'Return a JSON array of slide objects. Each object must have:\n'
+        '  - "title": slide title (string)\n'
+        '  - "html": HTML content for the slide body (string)\n'
+        'Return ONLY valid JSON. No markdown, no extra text.\n'
+        'Generate exactly $slideCount slides for the topic.';
+
+    try {
+      final result = switch (provider.formatType) {
+        'openai' || 'custom' => await _callOpenAIMulti(provider, topic, multiSlideSystemPrompt),
+        'anthropic' => await _callAnthropicMulti(provider, topic, multiSlideSystemPrompt),
+        _ => await _callOpenAIMulti(provider, topic, multiSlideSystemPrompt),
+      };
+      return _parseSlideJson(result, slideCount);
+    } catch (e) {
+      throw Exception('Failed to generate slides: $e');
+    }
+  }
+
+  List<Map<String, String>> _parseSlideJson(String raw, int expectedCount) {
+    // Try to extract JSON array from the response
+    final jsonStr = _extractJsonArray(raw);
+    if (jsonStr == null) {
+      // Fallback: treat entire response as a single slide
+      return [
+        {'title': 'Generated Slide', 'htmlContent': raw},
+      ];
+    }
+
+    try {
+      final List<dynamic> slides = jsonDecode(jsonStr);
+      return slides.map((s) {
+        final map = s as Map<String, dynamic>;
+        return {
+          'title': (map['title'] ?? 'Slide').toString(),
+          'htmlContent': (map['html'] ?? map['htmlContent'] ?? map['content'] ?? '').toString(),
+        };
+      }).toList();
+    } catch (e) {
+      // JSON parsing failed — return single slide fallback
+      return [
+        {'title': 'Generated Slide', 'htmlContent': raw},
+      ];
+    }
+  }
+
+  /// Extract a JSON array from text that may contain markdown fences or extra text.
+  String? _extractJsonArray(String text) {
+    // Try to find content between ```json and ``` markers
+    final codeBlockMatch = RegExp(r'```(?:json)?\s*([\s\S]*?)```').firstMatch(text);
+    if (codeBlockMatch != null) {
+      return codeBlockMatch.group(1)?.trim();
+    }
+    // Try to find content between [ and ]
+    final bracketMatch = RegExp(r'(\[[\s\S]*?\])').firstMatch(text);
+    if (bracketMatch != null) {
+      return bracketMatch.group(1);
+    }
+    return null;
+  }
+
+  // ---- OpenAI calls ----
+
   Future<String> _callOpenAI(AIProviderConfig config, String prompt) async {
     final client = http.Client();
     try {
@@ -219,17 +335,15 @@ class AIProviderManager with ChangeNotifier {
         body: jsonEncode({
           'model': config.model,
           'messages': [
+            {'role': 'system', 'content': _systemPrompt},
             {
-              'role': 'system',
+              'role': 'user',
               'content':
-                  'You are an expert in generating presentation HTML slides. '
-                  'Return ONLY valid HTML fragment (no markdown, no explanation). '
-                  'Use <h1> for title, <p> for paragraphs, <ul>/<li> for lists. '
-                  'No external CSS/JS references.',
+                  'Generate single slide HTML presentation content for: $prompt',
             },
-            {'role': 'user', 'content': 'Generate single slide HTML/CSS presentation content for: $prompt'},
           ],
-          'temperature': 0.7,
+          'temperature': config.temperature,
+          'max_tokens': config.maxTokens,
         }),
       );
 
@@ -244,4 +358,104 @@ class AIProviderManager with ChangeNotifier {
     }
   }
 
-  Future<String> _c
+  Future<String> _callOpenAIMulti(
+      AIProviderConfig config, String topic, String systemPrompt) async {
+    final client = http.Client();
+    try {
+      final response = await client.post(
+        Uri.parse('${config.baseUrl}/v1/chat/completions'),
+        headers: {
+          'Authorization': 'Bearer ${config.apiKey}',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'model': config.model,
+          'messages': [
+            {'role': 'system', 'content': systemPrompt},
+            {'role': 'user', 'content': topic},
+          ],
+          'temperature': config.temperature,
+          'max_tokens': config.maxTokens,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['choices'][0]['message']['content'] ?? '';
+      } else {
+        throw Exception('OpenAI API Error ${response.statusCode}: ${response.body}');
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  // ---- Anthropic calls ----
+
+  Future<String> _callAnthropic(AIProviderConfig config, String prompt) async {
+    final client = http.Client();
+    try {
+      final response = await client.post(
+        Uri.parse('${config.baseUrl}/v1/messages'),
+        headers: {
+          'x-api-key': config.apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'model': config.model,
+          'max_tokens': config.maxTokens,
+          'system': _systemPrompt,
+          'messages': [
+            {
+              'role': 'user',
+              'content':
+                  'Generate presentation HTML slide content for: $prompt',
+            },
+          ],
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['content'][0]['text'] ?? '';
+      } else {
+        throw Exception('Anthropic API Error ${response.statusCode}: ${response.body}');
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<String> _callAnthropicMulti(
+      AIProviderConfig config, String topic, String systemPrompt) async {
+    final client = http.Client();
+    try {
+      final response = await client.post(
+        Uri.parse('${config.baseUrl}/v1/messages'),
+        headers: {
+          'x-api-key': config.apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'model': config.model,
+          'max_tokens': config.maxTokens,
+          'system': systemPrompt,
+          'messages': [
+            {'role': 'user', 'content': topic},
+          ],
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['content'][0]['text'] ?? '';
+      } else {
+        throw Exception('Anthropic API Error ${response.statusCode}: ${response.body}');
+      }
+    } finally {
+      client.close();
+    }
+  }
+}

@@ -24,13 +24,21 @@ class HomeScreen extends StatelessWidget {
                 'assets/images/app_logo.png',
                 height: 32,
                 width: 32,
-                errorBuilder: (_, __, ___) => const Icon(Icons.slideshow, size: 28),
+                errorBuilder: (_, __, ___) =>
+                    const Icon(Icons.slideshow, size: 28),
               ),
             ),
             const SizedBox(width: 12),
             Text(appProvider.currentScreenName),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: Icon(_themeIconForMode(appProvider.themeMode)),
+            tooltip: 'Theme: ${_themeLabel(appProvider.themeMode)}',
+            onPressed: () => appProvider.toggleTheme(),
+          ),
+        ],
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
       ),
@@ -42,25 +50,49 @@ class HomeScreen extends StatelessWidget {
           const EffectsScreen(),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: appProvider.currentIndex,
-        onTap: (index) => appProvider.updateIndex(index),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.insert_drive_file),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: appProvider.currentIndex,
+        onDestinationSelected: (index) => appProvider.updateIndex(index),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.insert_drive_file_outlined),
+            selectedIcon: Icon(Icons.insert_drive_file),
             label: 'HTML to PPT',
           ),
-          BottomNavigationBarItem(
+          NavigationDestination(
             icon: Icon(Icons.chat_bubble_outline),
+            selectedIcon: Icon(Icons.chat_bubble),
             label: 'AI Chat',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.animation),
+          NavigationDestination(
+            icon: Icon(Icons.animation_outlined),
+            selectedIcon: Icon(Icons.animation),
             label: 'Effects',
           ),
         ],
       ),
     );
   }
-}
 
+  IconData _themeIconForMode(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.light:
+        return Icons.light_mode;
+      case ThemeMode.dark:
+        return Icons.dark_mode;
+      case ThemeMode.system:
+        return Icons.brightness_auto;
+    }
+  }
+
+  String _themeLabel(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.light:
+        return 'Light';
+      case ThemeMode.dark:
+        return 'Dark';
+      case ThemeMode.system:
+        return 'System';
+    }
+  }
+}

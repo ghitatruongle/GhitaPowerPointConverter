@@ -39,8 +39,10 @@ class PresentationState with ChangeNotifier {
     loadPresentation();
   }
 
+  // ---- Slide CRUD ----
+
   void addSlide(Map<String, dynamic> slide) {
-    _slides.add(slide);
+    _slides.add(Map<String, dynamic>.from(slide));
     notifyListeners();
     savePresentation();
   }
@@ -51,6 +53,40 @@ class PresentationState with ChangeNotifier {
       notifyListeners();
       savePresentation();
     }
+  }
+
+  /// Update a slide at the given index with new data.
+  void updateSlide(int index, Map<String, dynamic> updatedSlide) {
+    if (index >= 0 && index < _slides.length) {
+      _slides[index] = Map<String, dynamic>.from(updatedSlide);
+      notifyListeners();
+      savePresentation();
+    }
+  }
+
+  /// Duplicate a slide at the given index.
+  void duplicateSlide(int index) {
+    if (index >= 0 && index < _slides.length) {
+      final original = _slides[index];
+      final duplicate = Map<String, dynamic>.from(original)
+        ..['title'] = '${original['title'] ?? 'Slide'} (Copy)'
+        ..['timestamp'] = DateTime.now().millisecondsSinceEpoch;
+      _slides.insert(index + 1, duplicate);
+      notifyListeners();
+      savePresentation();
+    }
+  }
+
+  /// Move a slide from [oldIndex] to [newIndex].
+  void moveSlide(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= _slides.length) return;
+    if (newIndex < 0 || newIndex >= _slides.length) return;
+    if (oldIndex == newIndex) return;
+
+    final slide = _slides.removeAt(oldIndex);
+    _slides.insert(newIndex, slide);
+    notifyListeners();
+    savePresentation();
   }
 
   void clearSlides() {
@@ -65,26 +101,65 @@ class PresentationState with ChangeNotifier {
     savePresentation();
   }
 
+  // ---- Persistence ----
+
   Future<void> savePresentation([String? title]) async {
     await _configService.saveSlides(_slides, _slideEffect.name);
   }
 
   Future<void> loadPresentation([String? title]) async {
     final data = await _configService.loadSlides();
-    _slides = (data['slides'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-    _slideEffect = SlideEffect.values.byName(data['slide_effect'] ?? 'none');
+    _slides = (data['slides'] as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    try {
+      _slideEffect =
+          SlideEffect.values.byName(data['slide_effect'] ?? 'none');
+    } catch (_) {
+      _slideEffect = SlideEffect.none;
+    }
     notifyListeners();
   }
-  
-  Future<String> exportToPPT(String fileName) async {
+
+  Future<String> exportToPPT(String fileName,
+      {bool widescreen = true}) async {
     exportStatus = 'exporting';
     notifyListeners();
     try {
       final Directory targetDir = await getApplicationDocumentsDirectory();
-      final String sanitizeName = fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
+      final String sanitizeName =
+          fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
       final String fullPath = '${targetDir.path}/$sanitizeName.pptx';
-      
-      final File pptFile = await PPTGenerator.generatePPT(_slides, fullPath, effect: _slideEffect);
+
+      final File pptFile = await PPTGenerator.generatePPT(
+        _slides,
+        fullPath,
+        effect: _slideEffect,
+        widescreen: widescreen,
+      );
+      lastExportedPath = pptFile.path;
+      exportStatus = 'success';
+      notifyListeners();
+      return pptFile.path;
+    } catch (e) {
+      exportStatus = 'error';
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Export to a specific file path (used with file picker save dialog).
+  Future<String> exportToPPTPath(String filePath,
+      {bool widescreen = true}) async {
+    exportStatus = 'exporting';
+    notifyListeners();
+    try {
+      final File pptFile = await PPTGenerator.generatePPT(
+        _slides,
+        filePath,
+        effect: _slideEffect,
+        widescreen: widescreen,
+      );
       lastExportedPath = pptFile.path;
       exportStatus = 'success';
       notifyListeners();
@@ -96,4 +171,3 @@ class PresentationState with ChangeNotifier {
     }
   }
 }
-

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ai_provider_manager.dart';
@@ -11,7 +12,7 @@ class ConfigService {
 
   // Secure storage only for secrets (API keys).
   // Non-secret preferences remain in SharedPreferences.
-  static final _secureStorage = const FlutterSecureStorage();
+  static const _secureStorage = FlutterSecureStorage();
 
   // ---- Providers (non-secret config stored in SharedPreferences) ----
 
@@ -28,7 +29,7 @@ class ConfigService {
     if (jsonStr != null && jsonStr.isNotEmpty) {
       try {
         final List<dynamic> list = json.decode(jsonStr);
-        final loaded = list.map((m) => AIProviderConfig.fromMap(m as Map)).toList();
+        final loaded = list.map((m) => AIProviderConfig.fromMap(Map<String, dynamic>.from(m as Map))).toList();
         // Re-inject apiKey from secure storage for each provider if available.
         for (final p in loaded) {
           final storedKey = await _secureStorage.read(key: _secureKeyFor(p.id));
@@ -39,7 +40,7 @@ class ConfigService {
         }
         return loaded;
       } catch (e) {
-        print('Error loading providers: $e');
+        debugPrint('Error loading providers: $e');
       }
     }
     return [AIProviderConfig.defaultProvider()];
@@ -91,9 +92,23 @@ class ConfigService {
         final List<dynamic> list = json.decode(jsonStr);
         slides = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
       } catch (e) {
-        print('Error loading slides: $e');
+        debugPrint('Error loading slides: $e');
       }
     }
     return {'slides': slides, 'slide_effect': effectName};
+  }
+
+  // ---- System prompt ----
+
+  static const String _systemPromptKey = 'ai_system_prompt';
+
+  Future<void> saveSystemPrompt(String prompt) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_systemPromptKey, prompt);
+  }
+
+  Future<String?> loadSystemPrompt() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_systemPromptKey);
   }
 }
