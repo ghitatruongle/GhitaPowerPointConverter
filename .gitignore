@@ -16,6 +16,13 @@
 *.ipr
 *.iws
 
+# Tooling / local agent session data
+.zcode/
+.fvm/
+
+# Temporary root-level folders (not part of the app)
+/images/
+
 # Flutter / Dart
 .dart_tool/
 .flutter-plugins
@@ -28,3 +35,4 @@ build/
 # Windows specific build artifacts
 windows/flutter/ephemeral/
 *.pdb
+CMakeUserPresets.json
