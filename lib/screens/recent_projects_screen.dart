@@ -66,7 +66,14 @@ class _RecentProjectsScreenState extends State<RecentProjectsScreen> {
                   onPressed: () {
                     state.clearSlides();
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Đã tạo dự án thuyết trình mới!')),
+                      SnackBar(
+                        content: const Text('Đã tạo dự án thuyết trình mới!'),
+                        action: SnackBarAction(
+                          label: 'Hoàn tác',
+                          onPressed: () => state.undo(),
+                        ),
+                        duration: const Duration(seconds: 4),
+                      ),
                     );
                   },
                 ),

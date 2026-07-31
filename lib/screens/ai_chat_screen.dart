@@ -1,5 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/ai_provider_manager.dart';
 import '../providers/presentation_state.dart';
 
@@ -13,11 +16,62 @@ class AiChatScreen extends StatefulWidget {
 }
 
 class _AiChatScreenState extends State<AiChatScreen> {
+  static const _chatHistoryKey = 'ai_chat_history';
   final _messageController = TextEditingController();
   final _messages = <Map<String, dynamic>>[];
   bool _isGenerating = false;
   bool _isStreaming = false;
   bool _outlineMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadChatHistory();
+  }
+
+  Future<void> _loadChatHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonStr = prefs.getString(_chatHistoryKey);
+    if (jsonStr != null && jsonStr.isNotEmpty) {
+      try {
+        final List<dynamic> list = jsonDecode(jsonStr);
+        // Only load user/assistant messages (skip progress messages)
+        final loaded = list.whereType<Map<String, dynamic>>().where((m) {
+          final role = m['role'] as String?;
+          return role == 'user' || role == 'assistant' || role == 'multi_slide';
+        }).toList();
+        if (loaded.isNotEmpty && mounted) {
+          setState(() {
+            _messages.addAll(loaded);
+          });
+        }
+      } catch (_) {
+        // Corrupted history — ignore
+      }
+    }
+  }
+
+  Future<void> _saveChatHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Only persist meaningful messages (skip progress/empty)
+      final toSave = _messages.where((m) {
+        final content = m['content'] as String?;
+        return content != null && content.isNotEmpty;
+      }).toList();
+      await prefs.setString(_chatHistoryKey, jsonEncode(toSave));
+    } catch (_) {
+      // Storage full or unavailable — non-critical
+    }
+  }
+
+  void _addMessage(Map<String, dynamic> message) {
+    if (!mounted) return;
+    setState(() {
+      _messages.add(message);
+    });
+    unawaited(_saveChatHistory());
+  }
 
   @override
   void dispose() {
@@ -356,8 +410,9 @@ class _AiChatScreenState extends State<AiChatScreen> {
   }
 
   Future<void> _generateHtmlForPresentation(String prompt) async {
+    _addMessage({'role': 'user', 'content': prompt});
+    if (!mounted) return;
     setState(() {
-      _messages.add({'role': 'user', 'content': prompt});
       _isGenerating = true;
     });
 
@@ -377,23 +432,20 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
         if (mounted) {
           final content = 'Generated ${slides.length} slides for your topic.';
-          setState(() {
-            _messages.add({
-              'role': 'multi_slide',
-              'content': content,
-              'slides': slides,
-            });
-            _isGenerating = false;
+          _addMessage({
+            'role': 'multi_slide',
+            'content': content,
+            'slides': slides,
           });
+          if (mounted) setState(() => _isGenerating = false);
         }
       } else {
         // Single slide: stream the response so text appears as it arrives.
         final buffer = StringBuffer();
-        setState(() {
-          _isStreaming = true;
-          _messages.add({'role': 'assistant', 'content': ''});
-        });
+        _addMessage({'role': 'assistant', 'content': ''});
+        if (!mounted) return;
         final msgIndex = _messages.length - 1;
+        setState(() => _isStreaming = true);
 
         try {
           await for (final delta in
@@ -418,11 +470,8 @@ class _AiChatScreenState extends State<AiChatScreen> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _messages
-              .add({'role': 'assistant', 'content': 'Error: ${e.toString()}'});
-          _isGenerating = false;
-        });
+        _addMessage({'role': 'assistant', 'content': 'Error: ${e.toString()}'});
+        if (mounted) setState(() => _isGenerating = false);
       }
     }
   }
@@ -430,21 +479,17 @@ class _AiChatScreenState extends State<AiChatScreen> {
   // ---- Outline mode ----
 
   Future<void> _generateWithOutline(String topic) async {
-    setState(() {
-      _messages.add({'role': 'user', 'content': topic});
-      _isGenerating = true;
-    });
+    _addMessage({'role': 'user', 'content': topic});
+    if (!mounted) return;
+    setState(() => _isGenerating = true);
 
     List<Map<String, dynamic>> outline;
     try {
       outline = await widget.aiProviderManager.generateOutline(topic);
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _messages
-              .add({'role': 'assistant', 'content': 'Error: ${e.toString()}'});
-          _isGenerating = false;
-        });
+        _addMessage({'role': 'assistant', 'content': 'Error: ${e.toString()}'});
+        if (mounted) setState(() => _isGenerating = false);
       }
       return;
     }
@@ -455,14 +500,13 @@ class _AiChatScreenState extends State<AiChatScreen> {
     if (confirmed == null || confirmed.isEmpty || !mounted) return;
 
     // Generate slides sequentially with a progress message.
-    setState(() {
-      _isGenerating = true;
-      _messages.add({
-        'role': 'assistant',
-        'content': 'Generating 0/${confirmed.length} slides from outline...'
-      });
+    _addMessage({
+      'role': 'assistant',
+      'content': 'Generating 0/${confirmed.length} slides from outline...'
     });
+    if (!mounted) return;
     final progressIndex = _messages.length - 1;
+    setState(() => _isGenerating = true);
     final state = Provider.of<PresentationState>(context, listen: false);
 
     var generated = 0;
@@ -477,10 +521,10 @@ class _AiChatScreenState extends State<AiChatScreen> {
         generated++;
       } catch (e) {
         if (mounted) {
-          setState(() => _messages.add({
-                'role': 'assistant',
-                'content': 'Error on "${entry['title']}": $e'
-              }));
+          _addMessage({
+            'role': 'assistant',
+            'content': 'Error on "${entry['title']}": $e'
+          });
         }
         break;
       }
@@ -495,6 +539,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
             'Added $generated slide(s) from the outline to your presentation.';
         _isGenerating = false;
       });
+      unawaited(_saveChatHistory());
     }
   }
 
@@ -601,7 +646,8 @@ class _AiChatScreenState extends State<AiChatScreen> {
         ),
       ),
     ).whenComplete(() {
-      // Delay disposal past the dialog's closing animation.
+      // Dispose controllers only after the exit animation finishes —
+      // disposing earlier can crash TextField rebuilds during the fade-out.
       Future.delayed(const Duration(milliseconds: 400), () {
         for (final c in allControllers) {
           c.dispose();
@@ -613,6 +659,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
   void _showSystemPromptEditor() {
     final manager = widget.aiProviderManager;
     final controller = TextEditingController(text: manager.systemPrompt);
+    final messenger = ScaffoldMessenger.of(context);
 
     showDialog(
       context: context,
@@ -634,10 +681,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              controller.dispose();
-              Navigator.pop(context);
-            },
+            onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
           TextButton(
@@ -647,9 +691,8 @@ class _AiChatScreenState extends State<AiChatScreen> {
                   'Return ONLY valid HTML fragment (no markdown, no explanation). '
                   'Use <h1> for title, <p> for paragraphs, <ul>/<li> for lists. '
                   'No external CSS/JS references.');
-              controller.dispose();
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
+              messenger.showSnackBar(
                 const SnackBar(content: Text('System prompt reset to default!')),
               );
             },
@@ -658,9 +701,8 @@ class _AiChatScreenState extends State<AiChatScreen> {
           ElevatedButton(
             onPressed: () {
               manager.updateSystemPrompt(controller.text.trim());
-              controller.dispose();
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
+              messenger.showSnackBar(
                 const SnackBar(content: Text('System prompt saved!')),
               );
             },
@@ -668,7 +710,12 @@ class _AiChatScreenState extends State<AiChatScreen> {
           ),
         ],
       ),
-    );
+    ).whenComplete(() {
+      // Dispose after the exit animation finishes (covers barrier dismiss too).
+      Future.delayed(const Duration(milliseconds: 400), () {
+        controller.dispose();
+      });
+    });
   }
 
   void _showProviderSettings() {
@@ -686,6 +733,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
     final models = List<String>.from(currentProvider.availableModels);
     String selectedModel = currentProvider.selectedModel;
     String newModelInput = '';
+    final messenger = ScaffoldMessenger.of(context);
 
     showDialog(
       context: context,
@@ -841,14 +889,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                apiKeyController.dispose();
-                nameController.dispose();
-                baseUrlController.dispose();
-                temperatureController.dispose();
-                maxTokensController.dispose();
-                Navigator.pop(context);
-              },
+              onPressed: () => Navigator.pop(context),
               child: const Text('Cancel'),
             ),
             ElevatedButton(
@@ -858,7 +899,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
                 final maxTokens =
                     int.tryParse(maxTokensController.text.trim()) ?? 4096;
                 if (models.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     const SnackBar(
                         content: Text('Provider must have at least 1 model.')),
                   );
@@ -877,13 +918,8 @@ class _AiChatScreenState extends State<AiChatScreen> {
                   maxTokens: maxTokens.clamp(1, 128000),
                 );
                 manager.updateProvider(updated);
-                apiKeyController.dispose();
-                nameController.dispose();
-                baseUrlController.dispose();
-                temperatureController.dispose();
-                maxTokensController.dispose();
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   const SnackBar(content: Text('Provider settings saved!')),
                 );
               },
@@ -892,6 +928,16 @@ class _AiChatScreenState extends State<AiChatScreen> {
           ],
         ),
       ),
-    );
+    ).whenComplete(() {
+      // Dispose controllers after the exit animation finishes — covers Cancel,
+      // Save, and barrier dismiss without leaking.
+      Future.delayed(const Duration(milliseconds: 400), () {
+        apiKeyController.dispose();
+        nameController.dispose();
+        baseUrlController.dispose();
+        temperatureController.dispose();
+        maxTokensController.dispose();
+      });
+    });
   }
 }

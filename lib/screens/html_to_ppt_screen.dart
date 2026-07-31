@@ -542,10 +542,20 @@ class _HtmlToPPTScreenState extends State<HtmlToPPTScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
+              // Capture the messenger before popping so the SnackBar uses a
+              // context that is still valid (dialog context dies on pop).
+              final messenger = ScaffoldMessenger.of(context);
               state.clearSlides();
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('All slides cleared.')),
+              messenger.showSnackBar(
+                SnackBar(
+                  content: const Text('Đã xóa tất cả slide'),
+                  action: SnackBarAction(
+                    label: 'Hoàn tác',
+                    onPressed: () => state.undo(),
+                  ),
+                  duration: const Duration(seconds: 4),
+                ),
               );
             },
             child: const Text('Clear All'),

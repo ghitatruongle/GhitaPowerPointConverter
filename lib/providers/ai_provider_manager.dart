@@ -730,7 +730,10 @@ class AIProviderManager with ChangeNotifier {
     }
     // Scan for a balanced top-level JSON array (handles nested arrays and
     // strings, which a non-greedy regex would truncate).
-    final start = text.indexOf('[');
+    // Limit scan to last 100KB to avoid O(n) stalls on very long responses.
+    const maxScan = 102400;
+    final scanStart = text.length > maxScan ? text.length - maxScan : 0;
+    final start = text.indexOf('[', scanStart);
     if (start == -1) return null;
     var depth = 0;
     var inString = false;

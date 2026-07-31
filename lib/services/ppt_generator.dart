@@ -386,7 +386,7 @@ class PPTGenerator {
     b.write('        <p:txBody><a:bodyPr/><a:lstStyle/>\n');
     for (final line in notes.split('\n')) {
       b.write(
-          '          <a:p><a:r><a:rPr lang="en-US"/><a:t>${_xmlEscape(line)}</a:t></a:r></a:p>\n');
+          '          <a:p><a:r><a:rPr/><a:t>${_xmlEscape(line)}</a:t></a:r></a:p>\n');
     }
     b.write('        </p:txBody>\n');
     b.write('      </p:sp>\n');
@@ -451,10 +451,12 @@ class PPTGenerator {
     final rawHtml = slide['htmlContent'] ?? '';
 
     final cleanTitle = _xmlEscape(rawTitle.toString());
-    final parsed = parseHtmlContentFull(rawHtml);
+    // Single-pass HTML parse: reuse the DOM for content blocks, h2, and bg-color.
+    final parsedDoc = html_parser.parse(rawHtml);
+    final parsed = parseHtmlContentFullFromDoc(parsedDoc, fallbackText: rawHtml);
     final contentW = widescreen ? 11277600 : 8229600;
 
-    // Extract background color from data-bg-color attribute
+    // Extract background color from data-bg-color attribute (regex on raw HTML — fast)
     String? bgColor;
     final bgColorRegExp = RegExp(r"""data-bg-color=["']([^"']+)["']""", caseSensitive: false);
     final bgMatch = bgColorRegExp.firstMatch(rawHtml);
@@ -462,10 +464,9 @@ class PPTGenerator {
       bgColor = bgMatch.group(1);
     }
 
-    // Extract subtitle from h2 elements
+    // Extract subtitle from h2 elements (reuse parsed DOM)
     String? subtitleText;
-    final h2Doc = html_parser.parse(rawHtml);
-    final h2 = h2Doc.querySelector('h2');
+    final h2 = parsedDoc.querySelector('h2');
     if (h2 != null && h2.text.trim().isNotEmpty) {
       subtitleText = h2.text.trim();
     }
@@ -890,13 +891,20 @@ class PPTGenerator {
       ];
     }
     final document = html_parser.parse(html);
+    return parseHtmlContentFullFromDoc(document, fallbackText: html);
+  }
+
+  /// Parse from an already-parsed DOM document (avoids double-parsing).
+  static List<Map<String, dynamic>> parseHtmlContentFullFromDoc(
+      dom.Document document,
+      {String fallbackText = ''}) {
     final body = document.body;
     if (body == null) {
       return [
         {
           'type': 'text',
           'paragraphs': [
-            {'text': html, 'bold': 'false', 'italic': 'false'}
+            {'text': fallbackText, 'bold': 'false', 'italic': 'false'}
           ]
         }
       ];
@@ -911,7 +919,7 @@ class PPTGenerator {
         {
           'type': 'text',
           'paragraphs': [
-            {'text': html, 'bold': 'false', 'italic': 'false'}
+            {'text': body.text, 'bold': 'false', 'italic': 'false'}
           ]
         }
       ];

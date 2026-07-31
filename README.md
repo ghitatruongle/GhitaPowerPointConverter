@@ -1,10 +1,10 @@
-# Ghita PPT Converter v0.3.0
+# Ghita PPT Converter v0.7.2
 
 Flutter application for creating PowerPoint presentations with HTML support and AI-powered content generation.
 
 ## Version
-- **Current version:** `0.3.0+1`
-- **Git tag:** `v0.3.0`
+- **Current version:** `0.7.0+1`
+- **Git tag:** `v0.7.0`
 
 ## Features
 
@@ -16,7 +16,7 @@ Write custom HTML for slides — the engine preserves rich content in the output
 - Hyperlinks (`<a href>`)
 - Speaker notes (notes field or `<aside class="notes">`)
 - Slide background via `data-bg-color`
-- Drag-to-reorder, edit, duplicate, delete slides with undo
+- Drag-to-reorder, edit, duplicate, delete slides with undo/redo
 - Export as 16:9 (default) or 4:3 PPTX with a proper Office theme and document properties
 
 ### 2. **Export Formats**
@@ -30,7 +30,7 @@ Write custom HTML for slides — the engine preserves rich content in the output
 - **Present mode**: fullscreen in-app playback (arrow keys, progress bar, Esc to exit)
 
 ### 4. **Slide Transition Effects**
-14 transition effects (fade, push, wipe, split, blinds, clock, zoom, etc.) — deck-wide default plus per-slide overrides. Live preview with adjustable duration and looping.
+14 transition effects (fade, push, wipe, split, blinds, clock, zoom, etc.) — deck-wide default plus per-slide overrides.
 
 ### 5. **AI Assistant**
 Chat interface to generate presentation HTML using **OpenAI**, **Anthropic**, **Google Gemini**, or **Ollama** (local, no API key needed).
@@ -40,42 +40,73 @@ Chat interface to generate presentation HTML using **OpenAI**, **Anthropic**, **
 - Customizable system prompt
 - API keys stored encrypted via `flutter_secure_storage`
 
-### 6. **Slide Templates**
+### 6. **Smart Auto-Save**
+- Background draft auto-saves every 3-5 seconds when working on unsaved projects
+- Temporary drafts automatically purged after saving to `.ghita`
+
+### 7. **Project Management**
+- `.ghita` project bundles (ZIP with manifest, slides, history, media)
+- Recent projects hub with search and tagging
+- Undo/redo time machine history (up to 30 snapshots)
+
+### 8. **Slide Templates**
 5 bundled templates (Business, Creative, Academic, Marketing, Minimal) with recommended transitions and accent colors.
 
-### 7. **Dark Mode**
+### 9. **Dark Mode**
 Toggle between Light, Dark, and System theme mode. Persisted across restarts.
 
-### 8. **Windows Desktop**
+### 10. **Wi-Fi Live Presentation**
+Broadcast live slides over local Wi-Fi to audience devices via HTTP server.
+
+### 11. **Command Palette**
+Quick action launcher (`Ctrl+K`) and keyboard shortcuts cheat sheet (`Ctrl+/`).
+
+### 12. **Windows Desktop**
 Native Windows application with Material Design 3.
 
 ## Project Structure
 
 ```
 lib/
-├── main.dart                           # App entry point with dark mode
+├── main.dart                           # App entry point, MultiProvider, global error boundary
 ├── models/
 │   ├── slide.dart                      # Typed Slide model + SlideEffect enum
 │   └── slide_template.dart             # Slide template model
+├── providers/
+│   ├── app_provider.dart               # Tab navigation + theme state
+│   ├── presentation_state.dart         # Slide CRUD + effects + exports (PPTX/HTML/PDF) + undo/redo
+│   ├── ai_provider_manager.dart        # Providers (OpenAI/Anthropic/Gemini/Ollama) + streaming + outline
+│   └── config_service.dart             # Persistence (secure + SharedPreferences)
 ├── screens/
-│   ├── home_screen.dart                # Bottom navigation (3 tabs) + theme toggle
+│   ├── home_screen.dart                # 5-destination NavigationBar + command palette
 │   ├── html_to_ppt_screen.dart         # HTML editor + live preview + slide list + export
 │   ├── ai_chat_screen.dart             # AI chat + streaming + outline mode
 │   ├── effects_screen.dart             # Animation preview + PPTX transition picker
 │   ├── present_screen.dart             # Fullscreen in-app present mode (WebView2)
+│   ├── recent_projects_screen.dart     # .ghita project management
+│   ├── template_studio_screen.dart     # Template gallery
+│   ├── settings_screen.dart            # Theme, API keys, editor prefs, shortcuts
+│   ├── provider_settings_screen.dart   # Provider ping, model fetch, key rotation
 │   └── widgets/
-│       └── slide_preview.dart          # WebView2 slide preview widget
-├── providers/
-│   ├── app_provider.dart               # Tab navigation + theme state
-│   ├── presentation_state.dart         # Slide CRUD + effects + exports (PPTX/HTML/PDF)
-│   ├── ai_provider_manager.dart        # Providers (OpenAI/Anthropic/Gemini/Ollama) + streaming + outline
-│   └── config_service.dart             # Persistence (secure + SharedPreferences)
-└── services/
-    ├── ppt_generator.dart              # PPTX OOXML builder (images, notes, links, theme)
-    ├── pdf_export_service.dart         # PDF export (pdf package)
-    ├── html_export_service.dart        # Standalone HTML deck export
-    ├── html_image_loader.dart          # Image loading for exports (base64/local)
-    └── template_service.dart           # Template asset loader
+│       ├── slide_preview.dart          # WebView2 slide preview widget
+│       ├── wysiwyg_toolbar.dart        # Visual formatting toolbar
+│       ├── slide_ai_tools_dialog.dart  # Per-slide AI tools (rewrite, notes, translate)
+│       ├── command_palette_dialog.dart # Ctrl+K quick actions
+│       └── shortcuts_help_dialog.dart  # Keyboard shortcuts cheat sheet
+├── services/
+│   ├── ppt_generator.dart              # PPTX OOXML builder (images, notes, links, theme)
+│   ├── pdf_export_service.dart         # PDF export (pdf package, Unicode font)
+│   ├── html_export_service.dart        # Standalone HTML deck export
+│   ├── html_image_loader.dart          # Image loading for exports (base64/local)
+│   ├── project_bundle_service.dart     # .ghita ZIP bundle (manifest, slides, history, media)
+│   ├── smart_draft_manager.dart        # Auto-save drafts, purge after official save
+│   ├── time_machine_history_service.dart # Undo/redo snapshot tree
+│   ├── local_ai_detector_service.dart  # Auto-discover Ollama/LM Studio/vLLM
+│   ├── api_fallback_cascade_service.dart # Ping latency + provider fallback
+│   ├── template_service.dart           # Template asset loader
+│   ├── document_importer_service.dart  # Markdown/HTML/URL importer
+│   ├── mermaid_diagram_service.dart    # Mermaid diagram HTML blocks
+│   └── wifi_broadcaster_service.dart   # Live Wi-Fi HTTP broadcaster
 assets/
 ├── config/
 │   └── providers.json                  # AI provider templates (no API keys)
@@ -89,6 +120,8 @@ test/
 ├── slide_model_test.dart               # Slide model round-trip tests
 ├── html_export_test.dart               # HTML deck export tests
 ├── slide_template_test.dart            # Template + provider config tests
+├── document_importer_test.dart         # Document importer tests
+├── time_machine_history_test.dart      # History service tests
 └── widget_test.dart                    # Placeholder widget tests
 ```
 
@@ -119,17 +152,31 @@ flutter test
 flutter build windows --release
 ```
 
-## What's New in v0.3.0
+## What's New in v0.7.2
 
 | Category | Feature |
 |----------|---------|
-| 🐛 Fixes | 3 invalid-OOXML bugs fixed (table txBody, bullet glyph, xfrm tag) |
-| 📊 PPTX | Images, colors/fonts/align, speaker notes, hyperlinks, per-slide transitions, Office theme |
-| 📄 PDF | New PDF export sharing the PPTX HTML parser, Unicode/Vietnamese font embedding |
-| 🖥️ Preview | Live WebView2 preview, per-slide preview, fullscreen Present mode |
-| 🤖 AI | Gemini + Ollama providers, streaming with Stop, Outline mode |
-| 🧱 Core | Typed `Slide` model with notes and per-slide effects |
-| 🧪 Tests | 74 passing tests (up from 19), `flutter analyze` clean |
+| 🐛 Fixes | removeSlide undo fix, loadProjectFromFile cast fix, notes lang fix, port fallback for broadcaster, version drift fix |
+| ⚡ Perf | Debounced auto-save, PPTX generation isolate offload, single-pass HTML parse |
+| 🎨 UX | exportStatus auto-reset, outline editor dispose fix, clearSlides undo snackbar |
+| 🧹 Cleanup | Removed unused material_color_utilities dependency |
+
+## What's New in v0.7.0
+
+| Category | Feature |
+|----------|---------|
+| 🛡️ Auto-Save | Smart draft manager with automatic purge after official save |
+| 📦 Projects | .ghita project bundles with manifest, slides, history, media |
+| ⏳ History | Undo/redo time machine with 30-snapshot limit |
+| ⚙️ Settings | Dedicated settings tab with theme, API vault, editor prefs |
+| 🤖 AI Hub | Provider connection wizard with ping, model fetch, key rotation |
+| 🔍 Discovery | Auto-detect local AI services (Ollama, LM Studio, vLLM) |
+| 🎨 WYSIWYG | Visual formatting toolbar (bold, italic, lists, tables, callouts) |
+| 🤖 Per-Slide AI | Rewrite, speaker notes, translate per slide |
+| 📋 Templates | Template studio with 5 style presets |
+| 🎙️ Broadcaster | Wi-Fi live presentation with auto port fallback |
+| 📁 Projects | Recent projects hub with search and hashtag tagging |
+| ⌨️ Shortcuts | Command Palette (Ctrl+K) and shortcuts cheat sheet |
 
 See [CHANGELOG.md](CHANGELOG.md) for full details.
 

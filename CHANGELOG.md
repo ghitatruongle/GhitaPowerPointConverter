@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.7.2] - 2026-07-31 — Bug Fixes & Performance
+
+### 🐛 Critical Bug Fixes
+- **removeSlide undo/redo fix**: `_recordHistory()` now records the post-state snapshot (after removal, matching `addSlide` semantics) — both Undo and Redo now work correctly after deleting a slide
+- **clearSlides history fix**: History snapshot now recorded after clearing (post-state) so Undo restores cleared slides and Redo re-clears them
+- **loadProjectFromFile cast fix**: Fixed `CastError` when loading `.ghita` bundles — now properly maps `List<dynamic>` to `List<Slide>`
+- **Notes lang fix**: Removed hardcoded `lang="en-US"` from speaker notes runs — PowerPoint spell-check now uses the document default language
+- **Wi-Fi Broadcaster port fallback**: Server now tries ports 8090-8099 automatically if the default port is occupied; interface listing moved out of the retry loop so a listing failure can't abandon a bound server
+- **JSON extraction scan limit**: Added 100KB scan limit to `_extractJsonArrayStatic` to prevent O(n) stalls on very long AI responses
+
+### ⚡ Performance Improvements
+- **Debounced auto-save**: Slide mutations now debounce 400ms before writing to SharedPreferences — eliminates disk I/O spam during drag-reorder and rapid editing; pending save is flushed on dispose so the last edits are never lost
+- **Single-pass HTML parse**: `_buildSlideXml` now reuses a single DOM parse for content blocks, h2 subtitle, and bg-color extraction — faster PPTX generation
+
+### 🎨 UX Improvements
+- **exportStatus auto-reset**: Export success/error indicators now auto-clear after 5 seconds — prevents stale UI state
+- **Dialog controller leaks fixed**: System Prompt and Provider Settings dialogs now dispose controllers on ALL close paths (Cancel, Save, AND barrier dismiss) instead of leaking on barrier tap
+- **Outline editor dispose hardened**: Controllers disposed only after the exit animation finishes (400ms delay) — avoids potential "used after disposed" crashes during fade-out
+- **ClearSlides undo snackbar**: "Clear All Slides" now shows SnackBar with "Hoàn tác" (Undo) action — consistent with removeSlide behavior
+- **Chat history persistence**: AI chat messages now saved to SharedPreferences and restored on app restart; error and multi-slide messages included
+- **mounted-safety**: `_addMessage` and streamed updates now guard on `mounted` before `setState` — no "setState after dispose" crashes
+
+### 🧹 Cleanup
+- **Removed unused dependency**: `material_color_utilities: ^0.13.0` removed from pubspec.yaml (never imported in code)
+- **README version drift**: README.md updated to reflect v0.7.0+1 (was incorrectly showing v0.3.0+1)
+
 ## [0.7.0] - 2026-07-30 — Ultimate AI Studio & Presentation Platform (BƯỚC NHẢY VỌT LỊCH SỬ)
 
 ### 🛡️ Smart Auto-Save & PowerPoint-Style Storage Purge

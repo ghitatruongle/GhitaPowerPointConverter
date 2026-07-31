@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -26,6 +27,8 @@ class PresentationState with ChangeNotifier {
   final SmartDraftManager _smartDraftManager = SmartDraftManager();
   final TimeMachineHistoryService _historyService = TimeMachineHistoryService();
   final ProjectBundleService _bundleService = ProjectBundleService();
+  Timer? _saveDebounce;
+  Timer? _exportStatusTimer;
 
   List<Slide> get slides => _slides;
   SlideEffect get slideEffect => _slideEffect;
@@ -65,6 +68,39 @@ class PresentationState with ChangeNotifier {
     _historyService.recordSnapshot(action, _slides);
   }
 
+  /// Debounced save to avoid excessive disk I/O during rapid edits (drag-reorder, typing).
+  void _debouncedSave() {
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 400), () {
+      _saveDebounce = null;
+      savePresentation();
+    });
+  }
+
+  /// Auto-reset exportStatus after 5 seconds so UI doesn't show stale state.
+  void _resetExportStatus() {
+    _exportStatusTimer?.cancel();
+    _exportStatusTimer = Timer(const Duration(seconds: 5), () {
+      if (exportStatus != null && exportStatus != 'exporting') {
+        exportStatus = null;
+        notifyListeners();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    final pending = _saveDebounce;
+    _saveDebounce?.cancel();
+    _saveDebounce = null;
+    // Flush any pending debounced save so the last edits aren't lost on close.
+    if (pending != null && pending.isActive) {
+      unawaited(savePresentation());
+    }
+    _exportStatusTimer?.cancel();
+    super.dispose();
+  }
+
   // ---- Project Bundle (.ghita) ----
 
   Future<bool> saveProjectToFile(String targetPath) async {
@@ -84,7 +120,9 @@ class PresentationState with ChangeNotifier {
   Future<bool> loadProjectFromFile(String sourcePath) async {
     final data = await _bundleService.loadProjectBundle(sourcePath);
     if (data != null) {
-      _slides = data['slides'] as List<Slide>;
+      final rawSlides = data['slides'] as List<dynamic>?;
+      if (rawSlides == null) return false;
+      _slides = rawSlides.map((e) => e as Slide).toList();
       final manifest = data['manifest'] as Map<String, dynamic>?;
       if (manifest != null) {
         _presentationTitle = (manifest['title'] ?? 'Dự Án Thuyết Trình').toString();
@@ -105,14 +143,17 @@ class PresentationState with ChangeNotifier {
     _slides.add(slide);
     _recordHistory('Thêm Slide mới');
     notifyListeners();
-    savePresentation();
+    _debouncedSave();
   }
 
   void removeSlide(int index) {
     if (index >= 0 && index < _slides.length) {
       _slides.removeAt(index);
+      // Record AFTER the mutation so the snapshot is the post-state
+      // (matches addSlide semantics — keeps redo correct too).
+      _recordHistory('Xóa Slide');
       notifyListeners();
-      savePresentation();
+      _debouncedSave();
     }
   }
 
@@ -121,7 +162,7 @@ class PresentationState with ChangeNotifier {
     if (index >= 0 && index < _slides.length) {
       _slides[index] = updatedSlide;
       notifyListeners();
-      savePresentation();
+      _debouncedSave();
     }
   }
 
@@ -135,7 +176,7 @@ class PresentationState with ChangeNotifier {
       );
       _slides.insert(index + 1, duplicate);
       notifyListeners();
-      savePresentation();
+      _debouncedSave();
     }
   }
 
@@ -148,13 +189,17 @@ class PresentationState with ChangeNotifier {
     final slide = _slides.removeAt(oldIndex);
     _slides.insert(newIndex, slide);
     notifyListeners();
-    savePresentation();
+    _debouncedSave();
   }
 
   void clearSlides() {
+    if (_slides.isEmpty) return;
     _slides.clear();
+    // Record AFTER the mutation (post-state snapshot) so undo restores the
+    // cleared slides and redo re-clears them.
+    _recordHistory('Xóa tất cả Slide');
     notifyListeners();
-    savePresentation();
+    _debouncedSave();
   }
 
   void setEffect(SlideEffect effect) {
@@ -215,10 +260,12 @@ class PresentationState with ChangeNotifier {
       lastExportedPath = pptFile.path;
       exportStatus = 'success';
       notifyListeners();
+      _resetExportStatus();
       return pptFile.path;
     } catch (e) {
       exportStatus = 'error';
       notifyListeners();
+      _resetExportStatus();
       rethrow;
     }
   }
@@ -238,10 +285,12 @@ class PresentationState with ChangeNotifier {
       lastExportedPath = pptFile.path;
       exportStatus = 'success';
       notifyListeners();
+      _resetExportStatus();
       return pptFile.path;
     } catch (e) {
       exportStatus = 'error';
       notifyListeners();
+      _resetExportStatus();
       rethrow;
     }
   }
@@ -259,10 +308,12 @@ class PresentationState with ChangeNotifier {
       lastExportedPath = exportedPath;
       exportStatus = 'success';
       notifyListeners();
+      _resetExportStatus();
       return exportedPath;
     } catch (e) {
       exportStatus = 'error';
       notifyListeners();
+      _resetExportStatus();
       rethrow;
     }
   }
@@ -278,10 +329,12 @@ class PresentationState with ChangeNotifier {
       lastExportedPath = exportedPath;
       exportStatus = 'success';
       notifyListeners();
+      _resetExportStatus();
       return exportedPath;
     } catch (e) {
       exportStatus = 'error';
       notifyListeners();
+      _resetExportStatus();
       rethrow;
     }
   }
@@ -304,10 +357,12 @@ class PresentationState with ChangeNotifier {
       lastExportedPath = exportedPath;
       exportStatus = 'success';
       notifyListeners();
+      _resetExportStatus();
       return exportedPath;
     } catch (e) {
       exportStatus = 'error';
       notifyListeners();
+      _resetExportStatus();
       rethrow;
     }
   }
@@ -327,10 +382,12 @@ class PresentationState with ChangeNotifier {
       lastExportedPath = exportedPath;
       exportStatus = 'success';
       notifyListeners();
+      _resetExportStatus();
       return exportedPath;
     } catch (e) {
       exportStatus = 'error';
       notifyListeners();
+      _resetExportStatus();
       rethrow;
     }
   }
