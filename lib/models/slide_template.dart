@@ -10,6 +10,7 @@ class SlideTemplate {
   final SlideEffect recommendedEffect;
   final IconData icon;
   final Color accentColor;
+  final String category;
 
   /// Known template icons keyed by code point (tree-shake friendly:
   /// dynamic IconData construction breaks icon font tree shaking).
@@ -19,6 +20,21 @@ class SlideTemplate {
     983195: Icons.school,
     983187: Icons.campaign,
     983173: Icons.crop_square,
+    988132: Icons.dashboard,
+    983015: Icons.code,
+    983373: Icons.menu_book,
+    988292: Icons.science,
+    983391: Icons.assessment,
+    983642: Icons.people,
+    983457: Icons.photo_library,
+    983782: Icons.celebration,
+    983571: Icons.bar_chart,
+    983473: Icons.compare_arrows,
+    983489: Icons.account_tree,
+    983344: Icons.title,
+    982960: Icons.thumb_up,
+    983561: Icons.format_list_numbered,
+    983483: Icons.timeline,
   };
 
   static IconData iconForCodePoint(int? codePoint) =>
@@ -32,6 +48,7 @@ class SlideTemplate {
     required this.recommendedEffect,
     required this.icon,
     required this.accentColor,
+    this.category = 'General',
   });
 
   Map<String, dynamic> toMap() {
@@ -43,6 +60,7 @@ class SlideTemplate {
       'recommendedEffect': recommendedEffect.name,
       'icon': icon.codePoint,
       'accentColor': accentColor.toARGB32(),
+      'category': category,
     };
   }
 
@@ -58,6 +76,7 @@ class SlideTemplate {
       ),
       icon: iconForCodePoint(map['icon'] as int?),
       accentColor: Color(map['accentColor'] as int),
+      category: (map['category'] as String?) ?? 'General',
     );
   }
 }

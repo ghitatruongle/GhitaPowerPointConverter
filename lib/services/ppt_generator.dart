@@ -1356,6 +1356,7 @@ class PPTGenerator {
     final String type;
     String? subtype;
     switch (effect) {
+      // Original effects
       case SlideEffect.fade:
         type = 'fade';
         break;
@@ -1401,6 +1402,67 @@ class PPTGenerator {
       case SlideEffect.zoom:
         type = 'zoom';
         break;
+
+      // New entrance effects → closest PPTX equivalents
+      case SlideEffect.flyInLeft:
+        type = 'push';
+        subtype = 'l';
+        break;
+      case SlideEffect.flyInRight:
+        type = 'push';
+        subtype = 'r';
+        break;
+      case SlideEffect.flyInTop:
+        type = 'push';
+        subtype = 'u';
+        break;
+      case SlideEffect.flyInBottom:
+        type = 'push';
+        subtype = 'd';
+        break;
+      case SlideEffect.appear:
+        type = 'fade';
+        break;
+      case SlideEffect.basicZoom:
+        type = 'zoom';
+        break;
+      case SlideEffect.swivel:
+        type = 'rotate';
+        break;
+      case SlideEffect.boomerang:
+        type = 'push';
+        subtype = 'l';
+        break;
+
+      // New emphasis effects → fade (PPTX has no emphasis transitions)
+      case SlideEffect.pulse:
+      case SlideEffect.growShrink:
+      case SlideEffect.spin:
+      case SlideEffect.teeter:
+      case SlideEffect.flicker:
+      case SlideEffect.colorPulse:
+        type = 'fade';
+        break;
+
+      // New exit effects
+      case SlideEffect.flyOutLeft:
+        type = 'push';
+        subtype = 'l';
+        break;
+      case SlideEffect.flyOutRight:
+        type = 'push';
+        subtype = 'r';
+        break;
+      case SlideEffect.disappear:
+        type = 'fade';
+        break;
+
+      // Motion path effects
+      case SlideEffect.arc:
+      case SlideEffect.customPath:
+        type = 'fade';
+        break;
+
       default:
         return '';
     }

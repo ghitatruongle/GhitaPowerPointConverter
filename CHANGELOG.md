@@ -1,5 +1,98 @@
 # Changelog
 
+## [1.0.0] - 2026-08-01 — PowerPoint-Style Interface (BẢN CẬP NHẬT LỚN NHẤT)
+
+### 🎨 Giao Diện PowerPoint Microsoft 100%
+- **Ribbon Toolbar (`RibbonToolbar`)**: Thanh công cụ dạng tab 6 mục: Trang chủ, Chèn, Thiết kế, Chuyển động, Trình chiếu, Xem — giống Microsoft PowerPoint
+- **Quick Access Toolbar**: Thanh truy cập nhanh Undo/Redo/Save/Present ở góc trên trái
+- **Status Bar**: Thanh trạng thái dưới cùng với slide counter, zoom slider, view mode toggles
+- **3-Panel Layout**: Panel trái (thumbnails), Panel giữa (editor + preview), tương tự PowerPoint
+- **Editor Shell (`EditorShell`)**: Layout chính mới thay thế HtmlToPPTScreen cũ
+
+### 📋 Slide Thumbnail Panel
+- **Slide Thumbnails Panel (`SlideListPanel`)**: Panel trái với thumbnail miniature cho mỗi slide
+- **Drag-and-drop reorder**: Kéo thả để sắp xếp lại slide
+- **Context menu**: Right-click để edit, duplicate, preview, delete
+- **Slide number badge + structure chips**: Hiển thị số thứ tự và cấu trúc HTML
+- **Multi-select actions**: Duplicate, delete selected slides
+
+### 🎛️ Properties Panel
+- **Format Panel (`PropertiesPanel`)**: Panel phải cho định dạng element
+- **Slide Properties**: Background color, transition effect, layout selector
+- **Text Properties**: Font picker, size, color, alignment, bold/italic toggles
+- **Shape Properties**: Fill, border, shadow, transparency controls
+
+### 📐 Slide Layout System
+- **9 Layout Types (`SlideLayout`)**: Blank, Title Slide, Title+Content, Section Header, Two Content, Comparison, Title Only, Content+Caption, Picture+Caption
+- **Layout Picker (`LayoutPicker`)**: Grid picker với mini thumbnails cho mỗi layout
+- **Auto HTML generation**: Mỗi layout tự generate HTML template
+
+### 🎭 Hiệu Ứng Mở Rộng (14→30+)
+- **16 effects mới** được thêm vào SlideEffect enum:
+  - Entrance: Fly In (Left/Right/Top/Bottom), Appear, Basic Zoom, Swivel, Boomerang
+  - Emphasis: Pulse, Grow/Shrink, Spin, Teeter, Flicker, Color Pulse
+  - Exit: Fly Out (Left/Right), Disappear
+  - Motion Path: Arc, Custom Path
+- **EffectPreviewService**: Service mới generate CSS @keyframes cho tất cả effects
+- **Effects organized by category**: Basic, Entrance, Emphasis, Exit, Motion Path
+- **CSS transitions per-slide**: Mỗi slide có thể có transition effect riêng trong HTML export
+
+### 🎨 Template Mở Rộng (5→20)
+- **15 template mới** trong 6 categories:
+  - Technology: Tech Dashboard, API Documentation
+  - Education: Lesson Plan, Science Lab
+  - Corporate: Quarterly Report, Team Meeting
+  - Creative: Portfolio, Event Invitation
+  - Data: Infographic, Comparison, Process Flow, Timeline
+  - Special: Title Slide, Thank You, Agenda
+- **Category system**: Templates được phân loại theo category
+- **Template Studio upgrade**: Category tabs + live preview + Apply/Customize buttons
+
+### 🖥️ Presenter View
+- **Presenter View Screen (`PresenterViewScreen`)**: Split-screen presenter view
+  - Current slide (70%) + Next slide preview (30%)
+  - Speaker notes display (scrollable)
+  - Elapsed time timer
+  - Slide navigator
+  - Keyboard navigation (Arrow keys, Space, Esc)
+
+### 📊 Slide Sorter View
+- **Slide Sorter Screen (`SlideSorterScreen`)**: Grid view tất cả slides
+  - Zoom slider (50%-200%)
+  - Multi-select (tap to select/deselect)
+  - Bulk actions: Duplicate, Delete selected
+  - Select All / Deselect All
+
+### ✨ Visual Slide Editor
+- **Draggable Element (`DraggableElement`)**: Widget kéo thả element trong slide
+  - Supports text, shapes, images
+  - Snap-to-grid (10px grid)
+  - Resize handles (bottom-right corner)
+  - Delete button, element type badge
+  - Z-index layering support
+
+### 🔧 Code Refactoring
+- **Editor State (`EditorState`)**: Centralized state management cho editor
+- **Slide List Panel (`SlideListPanel`)**: Extracted from monolithic editor
+- **HTML Editor Panel (`HtmlEditorPanel`)**: Extracted from monolithic editor
+- **New directory structure**: `lib/screens/editor/` cho editor components
+
+### 🔌 HTML Export Nâng Cao
+- **Per-slide CSS transitions**: Mỗi slide dùng CSS @keyframes animation riêng
+- **30+ transition effects**: Tất cả effects đều hỗ trợ trong HTML export
+- **Smooth slide switching**: JavaScript re-triggers animation khi chuyển slide
+
+### 📊 PPT Generator Nâng Cao
+- **30+ effects mapped to OOXML**: Tất cả effects mới đều có mapping trong PPTX export
+- **Entrance effects → push/fly transitions**
+- **Emphasis effects → fade transitions** (PPTX không có emphasis transitions)
+
+### 📝 Template Service Nâng Cao
+- **Category support**: `getTemplatesByCategory()` và `getCategories()`
+- **20 templates**: Từ 5 lên 20 templates đa dạng
+
+---
+
 ## [0.7.2] - 2026-07-31 — Bug Fixes & Performance
 
 ### 🐛 Critical Bug Fixes

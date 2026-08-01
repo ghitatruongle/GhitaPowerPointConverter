@@ -6,7 +6,8 @@
     "htmlFile": "business.html",
     "recommendedEffect": "fade",
     "iconCodePoint": 983162,
-    "accentColor": 4282534075
+    "accentColor": 4282534075,
+    "category": "Corporate"
   },
   {
     "id": "creative",
@@ -15,7 +16,8 @@
     "htmlFile": "creative.html",
     "recommendedEffect": "zoom",
     "iconCodePoint": 983166,
-    "accentColor": 4285142739
+    "accentColor": 4285142739,
+    "category": "Creative"
   },
   {
     "id": "academic",
@@ -24,7 +26,8 @@
     "htmlFile": "academic.html",
     "recommendedEffect": "fade",
     "iconCodePoint": 983195,
-    "accentColor": 4283823871
+    "accentColor": 4283823871,
+    "category": "Education"
   },
   {
     "id": "marketing",
@@ -33,7 +36,8 @@
     "htmlFile": "marketing.html",
     "recommendedEffect": "pushLeft",
     "iconCodePoint": 983187,
-    "accentColor": 4292106867
+    "accentColor": 4292106867,
+    "category": "Corporate"
   },
   {
     "id": "minimal",
@@ -42,6 +46,157 @@
     "htmlFile": "minimal.html",
     "recommendedEffect": "fade",
     "iconCodePoint": 983173,
-    "accentColor": 4287669583
+    "accentColor": 4287669583,
+    "category": "Special"
+  },
+  {
+    "id": "tech_dashboard",
+    "name": "Tech Dashboard",
+    "description": "Modern dashboard layout with KPI metrics for technology presentations",
+    "htmlFile": "tech_dashboard.html",
+    "recommendedEffect": "flyInLeft",
+    "iconCodePoint": 988132,
+    "accentColor": 4278222848,
+    "category": "Technology"
+  },
+  {
+    "id": "tech_apidocs",
+    "name": "API Documentation",
+    "description": "Developer-friendly layout for API docs and technical references",
+    "htmlFile": "tech_apidocs.html",
+    "recommendedEffect": "appear",
+    "iconCodePoint": 983015,
+    "accentColor": 4282393856,
+    "category": "Technology"
+  },
+  {
+    "id": "edu_lesson",
+    "name": "Lesson Plan",
+    "description": "Structured educational layout for lesson plans and teaching materials",
+    "htmlFile": "edu_lesson.html",
+    "recommendedEffect": "fade",
+    "iconCodePoint": 983373,
+    "accentColor": 4283215360,
+    "category": "Education"
+  },
+  {
+    "id": "edu_science",
+    "name": "Science Lab",
+    "description": "Scientific layout for lab reports and research findings",
+    "htmlFile": "edu_science.html",
+    "recommendedEffect": "wipe",
+    "iconCodePoint": 988292,
+    "accentColor": 4282924032,
+    "category": "Education"
+  },
+  {
+    "id": "corp_quarterly",
+    "name": "Quarterly Report",
+    "description": "Professional financial report layout with data tables",
+    "htmlFile": "corp_quarterly.html",
+    "recommendedEffect": "pushLeft",
+    "iconCodePoint": 983391,
+    "accentColor": 4282464511,
+    "category": "Corporate"
+  },
+  {
+    "id": "corp_meeting",
+    "name": "Team Meeting",
+    "description": "Clean meeting agenda layout for standups and reviews",
+    "htmlFile": "corp_meeting.html",
+    "recommendedEffect": "fade",
+    "iconCodePoint": 983642,
+    "accentColor": 4285041855,
+    "category": "Corporate"
+  },
+  {
+    "id": "creative_portfolio",
+    "name": "Portfolio",
+    "description": "Bold creative portfolio for designers and artists",
+    "htmlFile": "creative_portfolio.html",
+    "recommendedEffect": "zoom",
+    "iconCodePoint": 983457,
+    "accentColor": 4283099015,
+    "category": "Creative"
+  },
+  {
+    "id": "creative_event",
+    "name": "Event Invitation",
+    "description": "Vibrant event invitation with dates and location",
+    "htmlFile": "creative_event.html",
+    "recommendedEffect": "flyInBottom",
+    "iconCodePoint": 983782,
+    "accentColor": 4290672445,
+    "category": "Creative"
+  },
+  {
+    "id": "data_infographic",
+    "name": "Infographic",
+    "description": "Data-rich infographic layout with visual statistics",
+    "htmlFile": "data_infographic.html",
+    "recommendedEffect": "appear",
+    "iconCodePoint": 983571,
+    "accentColor": 4283341582,
+    "category": "Data"
+  },
+  {
+    "id": "data_comparison",
+    "name": "Comparison",
+    "description": "Side-by-side comparison table for products or features",
+    "htmlFile": "data_comparison.html",
+    "recommendedEffect": "splitIn",
+    "iconCodePoint": 983473,
+    "accentColor": 4282393856,
+    "category": "Data"
+  },
+  {
+    "id": "data_process",
+    "name": "Process Flow",
+    "description": "Step-by-step process flow with numbered stages",
+    "htmlFile": "data_process.html",
+    "recommendedEffect": "wipe",
+    "iconCodePoint": 983489,
+    "accentColor": 4281573376,
+    "category": "Data"
+  },
+  {
+    "id": "special_title",
+    "name": "Title Slide",
+    "description": "Dramatic title slide for opening presentations",
+    "htmlFile": "special_title.html",
+    "recommendedEffect": "zoom",
+    "iconCodePoint": 983344,
+    "accentColor": 4278222848,
+    "category": "Special"
+  },
+  {
+    "id": "special_thankyou",
+    "name": "Thank You",
+    "description": "Closing slide with contact information",
+    "htmlFile": "special_thankyou.html",
+    "recommendedEffect": "fade",
+    "iconCodePoint": 982960,
+    "accentColor": 4282393856,
+    "category": "Special"
+  },
+  {
+    "id": "special_agenda",
+    "name": "Agenda",
+    "description": "Structured agenda slide for meeting openings",
+    "htmlFile": "special_agenda.html",
+    "recommendedEffect": "flyInLeft",
+    "iconCodePoint": 983561,
+    "accentColor": 4282513409,
+    "category": "Special"
+  },
+  {
+    "id": "data_timeline",
+    "name": "Timeline",
+    "description": "Chronological timeline for project milestones",
+    "htmlFile": "data_timeline.html",
+    "recommendedEffect": "pushLeft",
+    "iconCodePoint": 983483,
+    "accentColor": 4281573376,
+    "category": "Data"
   }
 ]

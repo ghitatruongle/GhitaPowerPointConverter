@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
+import 'effect_preview_service.dart';
+import '../models/slide.dart';
 
 class HtmlExportService {
   static const String _defaultFileName = 'presentation';
@@ -49,17 +51,30 @@ class HtmlExportService {
   String _buildHtmlPresentation(List<Map<String, dynamic>> slides) {
     final buffer = StringBuffer();
 
-    // Collect per-slide background colors
+    // Collect per-slide background colors and transition effects
     final slideBgStyles = <String>[];
+    final slideTransitions = <String>[];
     for (int i = 0; i < slides.length; i++) {
       final rawHtml = slides[i]['htmlContent'] ?? '';
       final match = _extractBgColor(rawHtml);
       if (match != null) {
         slideBgStyles.add('#slide-$i { background-color: $match; }');
       }
+      // Parse per-slide transition effect
+      final effectName = slides[i]['effect'] as String?;
+      if (effectName != null && effectName.isNotEmpty && effectName != 'none') {
+        try {
+          final effect = SlideEffect.values.byName(effectName);
+          slideTransitions.add('"slide-$i": "${effect.name}"');
+        } catch (_) {}
+      }
     }
 
     final bgStylesBlock = slideBgStyles.join('\n  ');
+    final transitionBlock = slideTransitions.join(',');
+
+    // Generate CSS for all effects
+    final effectsCss = EffectPreviewService.generateAllEffectsCss(duration: 0.6);
 
     buffer.write('<!DOCTYPE html>');
     buffer.write('<html lang="en">');
@@ -207,6 +222,9 @@ class HtmlExportService {
     if (bgStylesBlock.isNotEmpty) {
       buffer.write('  $bgStylesBlock');
     }
+    // Add effects CSS
+    buffer.write('\n  /* Slide transition effects */');
+    buffer.write('\n  $effectsCss');
     buffer.write('</style>');
     buffer.write('</head>');
     buffer.write('<body>');
@@ -222,7 +240,14 @@ class HtmlExportService {
       final cleanTitle = _xmlEscape(title.toString());
       final processedContent = _processSlideHtml(rawHtml);
 
-      buffer.write('  <div class="slide" id="slide-$i">');
+      // Get transition class for this slide
+      String transitionClass = '';
+      final effectName = slide['effect'] as String?;
+      if (effectName != null && effectName.isNotEmpty && effectName != 'none') {
+        transitionClass = ' slide-transition-$effectName';
+      }
+
+      buffer.write('  <div class="slide$transitionClass" id="slide-$i">');
       buffer.write('    <h1>$cleanTitle</h1>');
       buffer.write('    $processedContent');
       buffer.write('  </div>');
@@ -244,12 +269,23 @@ class HtmlExportService {
     buffer.write('  const progressBar = document.getElementById("progressBar");');
     buffer.write('  const prevBtn = document.getElementById("prevBtn");');
     buffer.write('  const nextBtn = document.getElementById("nextBtn");');
+    buffer.write('  const transitionMap = { $transitionBlock };');
     buffer.write('  function showSlide(index) {');
     buffer.write('    if (index < 0 || index >= totalSlides) return;');
     buffer.write(
-        '    deck.querySelectorAll(".slide").forEach(s => s.classList.remove("active"));');
+        '    deck.querySelectorAll(".slide").forEach(s => {');
+    buffer.write('      s.classList.remove("active");');
+    buffer.write('      // Remove and re-add transition class to re-trigger animation');
+    buffer.write('      const cls = s.className.split(" ").filter(c => !c.startsWith("slide-transition-"));');
+    buffer.write('      s.className = cls.join(" ");');
+    buffer.write('    });');
     buffer.write('    const slide = document.getElementById("slide-" + index);');
     buffer.write('    if (slide) {');
+    buffer.write('      // Force reflow to restart animation');
+    buffer.write('      void slide.offsetWidth;');
+    buffer.write('      // Re-apply transition class');
+    buffer.write('      const eff = transitionMap["slide-" + index];');
+    buffer.write('      if (eff) slide.classList.add("slide-transition-" + eff);');
     buffer.write('      slide.classList.add("active");');
     buffer.write('      slide.scrollTop = 0;');
     buffer.write('    }');

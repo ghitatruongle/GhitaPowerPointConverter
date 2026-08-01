@@ -1,5 +1,6 @@
-// Slide transition effects that map to PPTX transitions.
+// Slide transition effects that map to PPTX transitions and CSS animations.
 enum SlideEffect {
+  // Original effects (v0.x)
   none,
   fade,
   pushLeft,
@@ -14,6 +15,33 @@ enum SlideEffect {
   blinds,
   clock,
   zoom,
+
+  // New entrance effects (v1.0)
+  flyInLeft,
+  flyInRight,
+  flyInTop,
+  flyInBottom,
+  appear,
+  basicZoom,
+  swivel,
+  boomerang,
+
+  // New emphasis effects (v1.0)
+  pulse,
+  growShrink,
+  spin,
+  teeter,
+  flicker,
+  colorPulse,
+
+  // New exit effects (v1.0)
+  flyOutLeft,
+  flyOutRight,
+  disappear,
+
+  // New motion path effects (v1.0)
+  arc,
+  customPath,
 }
 
 /// A typed presentation slide.

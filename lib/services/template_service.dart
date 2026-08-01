@@ -35,6 +35,7 @@ class TemplateService {
             icon: SlideTemplate.iconForCodePoint(
                 meta['iconCodePoint'] as int?),
             accentColor: Color((meta['accentColor'] as int?) ?? 0xFF2196F3),
+            category: (meta['category'] as String?) ?? 'General',
           ));
         } catch (e) {
           debugPrint('Failed to load template HTML: $htmlFile — $e');
@@ -56,6 +57,21 @@ class TemplateService {
     } on StateError {
       return null;
     }
+  }
+
+  /// Get templates filtered by category.
+  Future<List<SlideTemplate>> getTemplatesByCategory(String category) async {
+    final templates = await loadTemplates();
+    if (category == 'All') return templates;
+    return templates.where((t) => t.category == category).toList();
+  }
+
+  /// Get all unique categories.
+  Future<List<String>> getCategories() async {
+    final templates = await loadTemplates();
+    final categories = templates.map((t) => t.category).toSet().toList();
+    categories.sort();
+    return ['All', ...categories];
   }
 
   void invalidateCache() {
