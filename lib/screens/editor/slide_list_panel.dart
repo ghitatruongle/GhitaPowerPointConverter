@@ -170,6 +170,7 @@ class SlideListPanel extends StatelessWidget {
           index: index,
           isSelected: isSelected,
           onTap: () {
+            presentationState.setCurrentSlide(index);
             editorState.selectSlide(index);
             editorState.editSlide(index, presentationState);
           },

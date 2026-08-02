@@ -9,6 +9,8 @@ class ConfigService {
   static const String _selectedProviderKey = 'selected_ai_provider_id';
   static const String _slidesKey = 'presentation_slides_config';
   static const String _effectKey = 'presentation_slide_effect';
+  static const String _autoAdvanceKey = 'presentation_auto_advance';
+  static const String _autoAdvanceSecondsKey = 'presentation_auto_advance_seconds';
 
   // Secure storage only for secrets (API keys).
   // Non-secret preferences remain in SharedPreferences.
@@ -96,6 +98,22 @@ class ConfigService {
       }
     }
     return {'slides': slides, 'slide_effect': effectName};
+  }
+
+  // ---- Auto advance ("Timing") ----
+
+  Future<void> saveAutoAdvance(bool enabled, int seconds) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_autoAdvanceKey, enabled);
+    await prefs.setInt(_autoAdvanceSecondsKey, seconds.clamp(1, 60));
+  }
+
+  /// Returns [enabled] and per-slide [seconds] for automatic slide advance.
+  Future<({bool enabled, int seconds})> loadAutoAdvance() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enabled = prefs.getBool(_autoAdvanceKey) ?? false;
+    final seconds = (prefs.getInt(_autoAdvanceSecondsKey) ?? 5).clamp(1, 60);
+    return (enabled: enabled, seconds: seconds);
   }
 
   // ---- System prompt ----

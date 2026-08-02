@@ -3,9 +3,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/slide.dart';
-import '../services/ppt_generator.dart';
 import '../services/html_export_service.dart';
-import '../services/pdf_export_service.dart';
+import '../services/export_isolate.dart';
 import '../services/smart_draft_manager.dart';
 import '../services/time_machine_history_service.dart';
 import '../services/project_bundle_service.dart';
@@ -23,6 +22,12 @@ class PresentationState with ChangeNotifier {
   String? exportStatus;
   String? lastExportedPath;
 
+  // Current slide in the editor (session-only, used by "Present From Current").
+  int _currentSlideIndex = 0;
+  // Automatic slide advance ("Timing") — persisted across sessions.
+  bool _autoAdvance = false;
+  int _autoAdvanceSeconds = 5;
+
   final ConfigService _configService = ConfigService();
   final SmartDraftManager _smartDraftManager = SmartDraftManager();
   final TimeMachineHistoryService _historyService = TimeMachineHistoryService();
@@ -36,13 +41,64 @@ class PresentationState with ChangeNotifier {
   String get presentationTitle => _presentationTitle;
   bool get canUndo => _historyService.canUndo;
   bool get canRedo => _historyService.canRedo;
+  int get currentSlideIndex => _currentSlideIndex;
+  bool get autoAdvance => _autoAdvance;
+  int get autoAdvanceSeconds => _autoAdvanceSeconds;
 
   /// Backward-compatible alias: returns effect name as string.
   String get currentTheme => _slideEffect.name;
 
   PresentationState() {
     loadPresentation();
+    _loadAutoAdvance();
   }
+
+  // ---- Auto advance ("Timing") ----
+
+  Future<void> _loadAutoAdvance() async {
+    final data = await _configService.loadAutoAdvance();
+    _autoAdvance = data.enabled;
+    _autoAdvanceSeconds = data.seconds;
+    notifyListeners();
+  }
+
+  void _persistAutoAdvance() {
+    unawaited(_configService.saveAutoAdvance(_autoAdvance, _autoAdvanceSeconds));
+  }
+
+  /// Track the slide currently selected in the editor (used by the ribbon's
+  /// "From Current" presenter). Not persisted.
+  void setCurrentSlide(int index) {
+    if (index < 0 || index >= _slides.length) return;
+    _currentSlideIndex = index;
+  }
+
+  /// Keep [currentSlideIndex] valid when the slide list shrinks (undo/redo,
+  /// delete, load). A stale index would crash "Present From Current" /
+  /// Presenter View flows.
+  void _keepCurrentSlideInRange() {
+    if (_slides.isEmpty) {
+      _currentSlideIndex = 0;
+    } else if (_currentSlideIndex >= _slides.length) {
+      _currentSlideIndex = _slides.length - 1;
+    }
+  }
+
+  void setAutoAdvance(bool enabled) {
+    _autoAdvance = enabled;
+    notifyListeners();
+    _persistAutoAdvance();
+  }
+
+  /// Set the per-slide auto-advance duration. Setting a duration implies the
+  /// author wants automatic pacing, so it also enables auto-advance.
+  void setAutoAdvanceSeconds(int seconds) {
+    _autoAdvanceSeconds = seconds.clamp(1, 60);
+    _autoAdvance = true;
+    notifyListeners();
+    _persistAutoAdvance();
+  }
+
 
   // ---- History Undo/Redo ----
 
@@ -50,6 +106,7 @@ class PresentationState with ChangeNotifier {
     final previous = _historyService.undo();
     if (previous != null) {
       _slides = previous.map((s) => s.copyWith()).toList();
+      _keepCurrentSlideInRange();
       notifyListeners();
       savePresentation('Undo');
     }
@@ -59,6 +116,7 @@ class PresentationState with ChangeNotifier {
     final next = _historyService.redo();
     if (next != null) {
       _slides = next.map((s) => s.copyWith()).toList();
+      _keepCurrentSlideInRange();
       notifyListeners();
       savePresentation('Redo');
     }
@@ -123,6 +181,7 @@ class PresentationState with ChangeNotifier {
       final rawSlides = data['slides'] as List<dynamic>?;
       if (rawSlides == null) return false;
       _slides = rawSlides.map((e) => e as Slide).toList();
+      _keepCurrentSlideInRange();
       final manifest = data['manifest'] as Map<String, dynamic>?;
       if (manifest != null) {
         _presentationTitle = (manifest['title'] ?? 'Dự Án Thuyết Trình').toString();
@@ -149,6 +208,7 @@ class PresentationState with ChangeNotifier {
   void removeSlide(int index) {
     if (index >= 0 && index < _slides.length) {
       _slides.removeAt(index);
+      _keepCurrentSlideInRange();
       // Record AFTER the mutation so the snapshot is the post-state
       // (matches addSlide semantics — keeps redo correct too).
       _recordHistory('Xóa Slide');
@@ -195,6 +255,7 @@ class PresentationState with ChangeNotifier {
   void clearSlides() {
     if (_slides.isEmpty) return;
     _slides.clear();
+    _keepCurrentSlideInRange();
     // Record AFTER the mutation (post-state snapshot) so undo restores the
     // cleared slides and redo re-clears them.
     _recordHistory('Xóa tất cả Slide');
@@ -232,6 +293,7 @@ class PresentationState with ChangeNotifier {
     _slides = (data['slides'] as List)
         .map((e) => Slide.fromMap(Map<String, dynamic>.from(e as Map)))
         .toList();
+    _keepCurrentSlideInRange();
     try {
       _slideEffect =
           SlideEffect.values.byName(data['slide_effect'] ?? 'none');
@@ -251,17 +313,19 @@ class PresentationState with ChangeNotifier {
           fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
       final String fullPath = '${targetDir.path}/$sanitizeName.pptx';
 
-      final File pptFile = await PPTGenerator.generatePPT(
+      final String path = await runPptExportInIsolate(
         _slideMaps(),
         fullPath,
         effect: _slideEffect,
         widescreen: widescreen,
+        autoAdvance:
+            _autoAdvance ? Duration(seconds: _autoAdvanceSeconds) : null,
       );
-      lastExportedPath = pptFile.path;
+      lastExportedPath = path;
       exportStatus = 'success';
       notifyListeners();
       _resetExportStatus();
-      return pptFile.path;
+      return path;
     } catch (e) {
       exportStatus = 'error';
       notifyListeners();
@@ -276,17 +340,19 @@ class PresentationState with ChangeNotifier {
     exportStatus = 'exporting';
     notifyListeners();
     try {
-      final File pptFile = await PPTGenerator.generatePPT(
+      final String path = await runPptExportInIsolate(
         _slideMaps(),
         filePath,
         effect: _slideEffect,
         widescreen: widescreen,
+        autoAdvance:
+            _autoAdvance ? Duration(seconds: _autoAdvanceSeconds) : null,
       );
-      lastExportedPath = pptFile.path;
+      lastExportedPath = path;
       exportStatus = 'success';
       notifyListeners();
       _resetExportStatus();
-      return pptFile.path;
+      return path;
     } catch (e) {
       exportStatus = 'error';
       notifyListeners();
@@ -300,11 +366,12 @@ class PresentationState with ChangeNotifier {
     exportStatus = 'exporting';
     notifyListeners();
     try {
-      final htmlService = HtmlExportService();
-      final exportedPath = await htmlService.exportToHtml(
-        _slideMaps(),
-        fileName: fileName,
-      );
+      final Directory targetDir = await getApplicationDocumentsDirectory();
+      final String safeName =
+          fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
+      final String fullPath = '${targetDir.path}/$safeName.html';
+      final String exportedPath =
+          await runHtmlExportInIsolate(_slideMaps(), fullPath);
       lastExportedPath = exportedPath;
       exportStatus = 'success';
       notifyListeners();
@@ -323,9 +390,8 @@ class PresentationState with ChangeNotifier {
     exportStatus = 'exporting';
     notifyListeners();
     try {
-      final htmlService = HtmlExportService();
-      final exportedPath =
-          await htmlService.exportToHtmlPath(_slideMaps(), filePath);
+      final String exportedPath =
+          await runHtmlExportInIsolate(_slideMaps(), filePath);
       lastExportedPath = exportedPath;
       exportStatus = 'success';
       notifyListeners();
@@ -348,8 +414,7 @@ class PresentationState with ChangeNotifier {
       final String sanitizeName =
           fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
       final String fullPath = '${targetDir.path}/$sanitizeName.pdf';
-      final pdfService = PdfExportService();
-      final exportedPath = await pdfService.exportToPdf(
+      final String exportedPath = await runPdfExportInIsolate(
         _slideMaps(),
         fullPath,
         widescreen: widescreen,
@@ -373,8 +438,7 @@ class PresentationState with ChangeNotifier {
     exportStatus = 'exporting';
     notifyListeners();
     try {
-      final pdfService = PdfExportService();
-      final exportedPath = await pdfService.exportToPdf(
+      final String exportedPath = await runPdfExportInIsolate(
         _slideMaps(),
         filePath,
         widescreen: widescreen,
@@ -393,7 +457,13 @@ class PresentationState with ChangeNotifier {
   }
 
   /// Build the standalone HTML deck string (used by in-app present mode).
-  String buildHtmlDeck() {
-    return HtmlExportService().buildPresentationHtml(_slideMaps());
+  String buildHtmlDeck({int startIndex = 0}) {
+    final autoAdvance =
+        _autoAdvance ? Duration(seconds: _autoAdvanceSeconds) : null;
+    return HtmlExportService().buildPresentationHtml(
+      _slideMaps(),
+      startIndex: startIndex,
+      autoAdvance: autoAdvance,
+    );
   }
 }

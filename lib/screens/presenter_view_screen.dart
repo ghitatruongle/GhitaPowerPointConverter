@@ -29,7 +29,10 @@ class _PresenterViewScreenState extends State<PresenterViewScreen> {
   @override
   void initState() {
     super.initState();
-    _currentSlide = widget.startSlide;
+    // Defense-in-depth: [startSlide] can arrive stale from the editor's
+    // current index after slides were removed — clamp so we never index OOB.
+    final count = widget.state.slides.length;
+    _currentSlide = count == 0 ? 0 : widget.startSlide.clamp(0, count - 1).toInt();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() => _elapsedSeconds++);
     });

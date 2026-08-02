@@ -9,19 +9,28 @@ import '../../utils/effect_helpers.dart';
 class RibbonToolbar extends StatefulWidget {
   final VoidCallback? onExport;
   final VoidCallback? onPresent;
+  final VoidCallback? onPresentFromCurrent;
+  final VoidCallback? onPresenterView;
   final VoidCallback? onUndo;
   final VoidCallback? onRedo;
   final bool canUndo;
   final bool canRedo;
 
+  /// Read/write auto-advance ("Timing") settings. Optional so the toolbar
+  /// stays usable standalone; when provided the Timing group is live.
+  final PresentationState? presentationState;
+
   const RibbonToolbar({
     super.key,
     this.onExport,
     this.onPresent,
+    this.onPresentFromCurrent,
+    this.onPresenterView,
     this.onUndo,
     this.onRedo,
     this.canUndo = false,
     this.canRedo = false,
+    this.presentationState,
   });
 
   @override
@@ -607,38 +616,133 @@ class _RibbonToolbarState extends State<RibbonToolbar>
               ],
             ),
             _RibbonDivider(),
-            _RibbonGroup(
-              label: 'Timing',
+            _buildTimingGroup(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---- Timing group (Transitions tab) ----
+
+  Widget _buildTimingGroup(BuildContext context) {
+    final ps = widget.presentationState;
+
+    if (ps == null) {
+      // Standalone usage: show the group but keep its buttons inert.
+      return const _RibbonGroup(
+        label: 'Timing',
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _RibbonButton(
+                icon: Icons.timer_outlined,
+                label: 'Duration',
+                onPressed: null,
+                compact: true,
+              ),
+              _RibbonButton(
+                icon: Icons.mouse,
+                label: 'On Click',
+                onPressed: null,
+                compact: true,
+              ),
+              _RibbonButton(
+                icon: Icons.access_time,
+                label: 'Auto',
+                onPressed: null,
+                compact: true,
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    return ListenableBuilder(
+      listenable: ps,
+      builder: (context, _) {
+        final isAuto = ps.autoAdvance;
+        return _RibbonGroup(
+          label: 'Timing',
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _RibbonButton(
-                      icon: Icons.timer_outlined,
-                      label: 'Duration',
-                      onPressed: () {},
-                      compact: true,
-                    ),
-                    _RibbonButton(
-                      icon: Icons.mouse,
-                      label: 'On Click',
-                      onPressed: () {},
-                      compact: true,
-                    ),
-                    _RibbonButton(
-                      icon: Icons.access_time,
-                      label: 'Auto',
-                      onPressed: () {},
-                      compact: true,
-                    ),
-                  ],
+                _RibbonButton(
+                  icon: Icons.timer_outlined,
+                  label: 'Duration',
+                  tooltip: 'Set auto-advance duration (seconds)',
+                  onPressed: () => _showTimingDialog(context, ps),
+                  compact: true,
+                ),
+                _RibbonButton(
+                  icon: Icons.mouse,
+                  label: 'On Click',
+                  tooltip: 'Advance slides manually (default)',
+                  onPressed: () => ps.setAutoAdvance(false),
+                  selected: !isAuto,
+                  compact: true,
+                ),
+                _RibbonButton(
+                  icon: Icons.access_time,
+                  label: 'Auto',
+                  tooltip: 'Auto-advance slides by duration',
+                  onPressed: () => ps.setAutoAdvance(!isAuto),
+                  selected: isAuto,
+                  compact: true,
                 ),
               ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showTimingDialog(BuildContext context, PresentationState ps) async {
+    var seconds = ps.autoAdvanceSeconds;
+    final chosen = await showDialog<int>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Thời lượng tự động'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Auto-advance duration per slide (seconds):'),
+              const SizedBox(height: 12),
+              Text(
+                '$seconds giây',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              Slider(
+                min: 1,
+                max: 60,
+                divisions: 59,
+                label: '$seconds',
+                value: seconds.toDouble(),
+                onChanged: (v) => setDialogState(() => seconds = v.round()),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Hủy'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, seconds),
+              child: const Text('Áp dụng'),
             ),
           ],
         ),
       ),
     );
+    if (chosen != null) {
+      ps.setAutoAdvanceSeconds(chosen);
+    }
   }
 
   // ---- Slide Show Tab ----
@@ -662,7 +766,7 @@ class _RibbonToolbarState extends State<RibbonToolbar>
                 _RibbonButton(
                   icon: Icons.play_circle_outline,
                   label: 'From Current',
-                  onPressed: widget.onPresent,
+                  onPressed: widget.onPresentFromCurrent,
                   compact: true,
                 ),
               ],
@@ -677,7 +781,7 @@ class _RibbonToolbarState extends State<RibbonToolbar>
                     _RibbonButton(
                       icon: Icons.slideshow,
                       label: 'Presenter View',
-                      onPressed: () {},
+                      onPressed: widget.onPresenterView,
                       compact: true,
                     ),
                     _RibbonButton(
@@ -858,6 +962,9 @@ class _RibbonButton extends StatelessWidget {
   final bool large;
   final bool compact;
 
+  /// Highlights the button as the active/enabled mode (e.g. Timing group).
+  final bool selected;
+
   const _RibbonButton({
     required this.icon,
     this.label,
@@ -865,11 +972,39 @@ class _RibbonButton extends StatelessWidget {
     this.onPressed,
     this.large = false,
     this.compact = false,
+    this.selected = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    // Wrap non-large buttons in a subtle highlight when selected.
+    Widget button = IconButton(
+      icon: Icon(
+        icon,
+        size: compact ? 16 : 18,
+        color: selected ? theme.colorScheme.primary : null,
+      ),
+      tooltip: tooltip ?? label,
+      onPressed: onPressed,
+      visualDensity: VisualDensity.compact,
+      padding: compact ? EdgeInsets.zero : null,
+      constraints: compact
+          ? const BoxConstraints(minWidth: 24, minHeight: 24)
+          : null,
+      isSelected: selected,
+    );
+
+    if (selected && !large) {
+      button = DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: button,
+      );
+    }
 
     if (large) {
       return Padding(
@@ -901,16 +1036,7 @@ class _RibbonButton extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 1),
-      child: IconButton(
-        icon: Icon(icon, size: compact ? 16 : 18),
-        tooltip: tooltip ?? label,
-        onPressed: onPressed,
-        visualDensity: VisualDensity.compact,
-        padding: compact ? EdgeInsets.zero : null,
-        constraints: compact
-            ? const BoxConstraints(minWidth: 24, minHeight: 24)
-            : null,
-      ),
+      child: button,
     );
   }
 }

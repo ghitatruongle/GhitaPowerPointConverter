@@ -25,7 +25,7 @@ class SmartDraftManager {
     try {
       final file = await _getDraftFile();
       final draftData = {
-        'version': '0.7.0',
+        'version': '1.0.2',
         'timestamp': DateTime.now().millisecondsSinceEpoch,
         'metadata': metadata ?? {},
         'slides': slides.map((s) => s.toMap()).toList(),

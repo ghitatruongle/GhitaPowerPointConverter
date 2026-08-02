@@ -44,12 +44,33 @@ class HtmlExportService {
   }
 
   /// Build the standalone presentation HTML (used by in-app present mode).
-  String buildPresentationHtml(List<Map<String, dynamic>> slides) {
-    return _buildHtmlPresentation(slides);
+  ///
+  /// [startIndex] selects the first visible slide (for "Present From Current");
+  /// [autoAdvance] enables automatic slide advancement in the embedded player.
+  String buildPresentationHtml(
+    List<Map<String, dynamic>> slides, {
+    int startIndex = 0,
+    Duration? autoAdvance,
+  }) {
+    return _buildHtmlPresentation(
+      slides,
+      startIndex: startIndex,
+      autoAdvance: autoAdvance,
+    );
   }
 
-  String _buildHtmlPresentation(List<Map<String, dynamic>> slides) {
+  String _buildHtmlPresentation(
+    List<Map<String, dynamic>> slides, {
+    int startIndex = 0,
+    Duration? autoAdvance,
+  }) {
     final buffer = StringBuffer();
+    // Clamp safely — the caller guards against empty decks, but keep this
+    // robust in case a deck becomes empty between build and render.
+    final int initIndex =
+        slides.isEmpty ? 0 : startIndex.clamp(0, slides.length - 1).toInt();
+    final int autoMs = autoAdvance?.inMilliseconds ?? 0;
+
 
     // Collect per-slide background colors and transition effects
     final slideBgStyles = <String>[];
@@ -189,6 +210,7 @@ class HtmlExportService {
     buffer.write('  }');
     buffer.write('  .controls button:hover { background: rgba(255,255,255,0.3); }');
     buffer.write('  .controls button:disabled { opacity: 0.3; cursor: not-allowed; }');
+    buffer.write('  .controls button.auto-armed { background: rgba(102,126,234,0.5); }');
     buffer.write('  .slide-counter {');
     buffer.write('    color: #ccc;');
     buffer.write('    font-size: 14px;');
@@ -258,6 +280,10 @@ class HtmlExportService {
     buffer.write(
         '  <button id="prevBtn" onclick="changeSlide(-1)" title="Previous">&#x25C0;</button>');
     buffer.write('  <span class="slide-counter" id="counter">1 / ${slides.length}</span>');
+    // Auto-advance toggle (only shown when the deck is configured with timing).
+    if (autoMs > 0) {
+      buffer.write('  <button id="autoBtn" class="auto-armed" onclick="toggleAuto()" title="Pause auto-play">&#10074;&#10074; Auto</button>');
+    }
     buffer.write(
         '  <button id="nextBtn" onclick="changeSlide(1)" title="Next">&#x25B6;</button>');
     buffer.write('</div>');
@@ -269,7 +295,26 @@ class HtmlExportService {
     buffer.write('  const progressBar = document.getElementById("progressBar");');
     buffer.write('  const prevBtn = document.getElementById("prevBtn");');
     buffer.write('  const nextBtn = document.getElementById("nextBtn");');
+    buffer.write('  const autoBtn = document.getElementById("autoBtn");');
+    buffer.write('  let autoMs = $autoMs;');
+    buffer.write('  let autoTimer = null;');
+    buffer.write('  let autoPaused = false;');
     buffer.write('  const transitionMap = { $transitionBlock };');
+    buffer.write('  function scheduleAuto() {');
+    buffer.write('    if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }');
+    buffer.write('    if (autoMs > 0 && !autoPaused && currentSlide < totalSlides - 1) {');
+    buffer.write('      autoTimer = setTimeout(() => changeSlide(1), autoMs);');
+    buffer.write('    }');
+    buffer.write('  }');
+    buffer.write('  function toggleAuto() {');
+    buffer.write('    if (autoMs <= 0 || !autoBtn) return;');
+    buffer.write('    autoPaused = !autoPaused;');
+    buffer.write('    if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }');
+    buffer.write('    if (!autoPaused) scheduleAuto();');
+    buffer.write('    autoBtn.classList.toggle("auto-armed", !autoPaused);');
+    buffer.write('    autoBtn.title = autoPaused ? "Resume auto-play" : "Pause auto-play";');
+    buffer.write('    autoBtn.innerHTML = (autoPaused ? "&#9654;" : "&#10074;&#10074;") + " Auto";');
+    buffer.write('  }');
     buffer.write('  function showSlide(index) {');
     buffer.write('    if (index < 0 || index >= totalSlides) return;');
     buffer.write(
@@ -294,6 +339,7 @@ class HtmlExportService {
     buffer.write('    progressBar.style.width = ((index + 1) / totalSlides * 100) + "%";');
     buffer.write('    prevBtn.disabled = index === 0;');
     buffer.write('    nextBtn.disabled = index === totalSlides - 1;');
+    buffer.write('    scheduleAuto();');
     buffer.write('  }');
     buffer.write('  function changeSlide(delta) {');
     buffer.write('    showSlide(currentSlide + delta);');
@@ -328,7 +374,7 @@ class HtmlExportService {
         '    const diff = touchStartX - e.changedTouches[0].clientX;');
     buffer.write('    if (Math.abs(diff) > 50) changeSlide(diff > 0 ? 1 : -1);');
     buffer.write('  });');
-    buffer.write('  showSlide(0);');
+    buffer.write('  showSlide($initIndex);');
     buffer.write('</script>');
     buffer.write('</body>');
     buffer.write('</html>');

@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../providers/ai_provider_manager.dart';
 import '../providers/presentation_state.dart';
+import 'present_screen.dart';
+import 'presenter_view_screen.dart';
 import 'editor/editor_shell.dart';
 import 'recent_projects_screen.dart';
 import 'template_studio_screen.dart';
@@ -71,6 +73,33 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  /// Launch in-app presentation, optionally starting at a specific slide.
+  void _present(
+      BuildContext context, PresentationState state, {int startSlide = 0}) {
+    if (state.slides.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không có slide để trình chiếu.')),
+      );
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => PresentScreen(state: state, startSlide: startSlide),
+    ));
+  }
+
+  void _openPresenterView(BuildContext context, PresentationState state) {
+    if (state.slides.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Không có slide để trình chiếu.')),
+      );
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) =>
+          PresenterViewScreen(state: state, startSlide: state.currentSlideIndex),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final appProvider = Provider.of<AppProvider>(context);
@@ -132,7 +161,7 @@ class HomeScreen extends StatelessWidget {
                         onUndo: () => presentationState.undo(),
                         onRedo: () => presentationState.redo(),
                         onSave: () => presentationState.savePresentation(),
-                        onPresent: () {},
+                        onPresent: () => _present(context, presentationState),
                         canUndo: presentationState.canUndo,
                         canRedo: presentationState.canRedo,
                       ),
@@ -177,7 +206,15 @@ class HomeScreen extends StatelessWidget {
                 // Ribbon Toolbar
                 RibbonToolbar(
                   onExport: () {},
-                  onPresent: () {},
+                  onPresent: () => _present(context, presentationState),
+                  onPresentFromCurrent: () => _present(
+                    context,
+                    presentationState,
+                    startSlide: presentationState.currentSlideIndex,
+                  ),
+                  onPresenterView: () =>
+                      _openPresenterView(context, presentationState),
+                  presentationState: presentationState,
                   onUndo: () => presentationState.undo(),
                   onRedo: () => presentationState.redo(),
                   canUndo: presentationState.canUndo,

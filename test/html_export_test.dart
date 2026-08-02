@@ -97,5 +97,39 @@ void main() {
       expect(name, contains('my_presentation_'));
       expect(name, endsWith('.html'));
     });
+
+    test('buildPresentationHtml starts at the requested startIndex', () {
+      final slides = [
+        {'title': 'A', 'htmlContent': '<p>A</p>'},
+        {'title': 'B', 'htmlContent': '<p>B</p>'},
+        {'title': 'C', 'htmlContent': '<p>C</p>'},
+      ];
+      final html = service.buildPresentationHtml(slides, startIndex: 1);
+      expect(html, contains('let currentSlide = 0;'));
+      expect(html, contains('showSlide(1);'));
+    });
+
+    test('buildPresentationHtml embeds auto-advance timer when configured', () {
+      final slides = [
+        {'title': 'A', 'htmlContent': '<p>A</p>'},
+        {'title': 'B', 'htmlContent': '<p>B</p>'},
+      ];
+      final html = service.buildPresentationHtml(
+        slides,
+        autoAdvance: const Duration(seconds: 5),
+      );
+      expect(html, contains('let autoMs = 5000;'));
+      expect(html, contains('function scheduleAuto'));
+      expect(html, contains('onclick="toggleAuto()"'));
+    });
+
+    test('buildPresentationHtml omits auto control when not configured', () {
+      final slides = [
+        {'title': 'A', 'htmlContent': '<p>A</p>'},
+      ];
+      final html = service.buildPresentationHtml(slides);
+      expect(html, contains('let autoMs = 0;'));
+      expect(html, isNot(contains('onclick="toggleAuto()"')));
+    });
   });
 }

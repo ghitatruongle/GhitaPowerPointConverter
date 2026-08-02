@@ -78,10 +78,11 @@ class PPTGenerator {
     String outputPath, {
     SlideEffect effect = SlideEffect.none,
     bool widescreen = true,
+    Duration? autoAdvance,
   }) async {
     try {
-      final pptxBytes =
-          _createPPTXArchive(slides, effect: effect, widescreen: widescreen);
+      final pptxBytes = _createPPTXArchive(slides,
+          effect: effect, widescreen: widescreen, autoAdvance: autoAdvance);
       final outputFile = File(outputPath);
       await outputFile.create(recursive: true);
       await outputFile.writeAsBytes(pptxBytes);
@@ -95,12 +96,15 @@ class PPTGenerator {
     List<Map<String, dynamic>> slides, {
     SlideEffect effect = SlideEffect.none,
     bool widescreen = true,
+    Duration? autoAdvance,
   }) {
     final archive = Archive();
     final mediaFiles = <_MediaFile>[];
     final mediaExts = <String>{};
     final notesSlideNums = <int>[];
     var mediaCounter = 0;
+    // Unified auto-advance timing for every slide (0 = no timing).
+    final autoAdvanceMs = autoAdvance?.inMilliseconds ?? 0;
 
     // 1. Individual slides XML, slide rels, notes slides and media.
     final slideXmls = <String>[];
@@ -125,6 +129,7 @@ class PPTGenerator {
         slideNum,
         slideEffect,
         widescreen: widescreen,
+        autoAdvanceMs: autoAdvanceMs > 0 ? autoAdvanceMs : null,
         rels: rels,
         media: slideMedia,
         nextMediaIndex: () => ++mediaCounter,
@@ -443,6 +448,7 @@ class PPTGenerator {
     int slideNum,
     SlideEffect effect, {
     bool widescreen = true,
+    int? autoAdvanceMs,
     _SlideRels? rels,
     List<_MediaFile>? media,
     int Function()? nextMediaIndex,
@@ -477,7 +483,7 @@ class PPTGenerator {
         '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">\n');
 
     // Transition (applied outside cSld per OOXML spec)
-    final transitionXml = _buildTransitionXml(effect);
+    final transitionXml = _buildTransitionXml(effect, autoAdvanceMs: autoAdvanceMs);
     if (transitionXml.isNotEmpty) {
       b.write('  $transitionXml\n');
     }
@@ -1351,7 +1357,12 @@ class PPTGenerator {
 
   // ---- PPTX transition XML from SlideEffect ----
 
-  static String _buildTransitionXml(SlideEffect effect) {
+  /// Builds the `<p:transition>` element for [effect].
+  ///
+  /// [autoAdvanceMs] (milliseconds) adds `<p:advTm val="..."/>` so PowerPoint
+  /// advances slides automatically after that time (works even when there is
+  /// no visual transition).
+  static String _buildTransitionXml(SlideEffect effect, {int? autoAdvanceMs}) {
     // OOXML-compliant transition: spd on parent, no dur on child
     final String type;
     String? subtype;
@@ -1464,6 +1475,10 @@ class PPTGenerator {
         break;
 
       default:
+        // No visual transition — still emit timing when requested.
+        if (autoAdvanceMs != null && autoAdvanceMs > 0) {
+          return '<p:transition spd="slow" advClick="1"><p:advTm val="$autoAdvanceMs"/></p:transition>';
+        }
         return '';
     }
 
@@ -1473,6 +1488,9 @@ class PPTGenerator {
       xml += ' dir="$subtype"';
     }
     xml += '/>';
+    if (autoAdvanceMs != null && autoAdvanceMs > 0) {
+      xml += '<p:advTm val="$autoAdvanceMs"/>';
+    }
     xml += '</p:transition>';
     return xml;
   }

@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.0.2] - 2026-08-02 — Bản vá nhỏ
+
+### ⚡ Hiệu năng
+- **Persistent isolate cho export**: `ExportIsolateService` mở một worker isolate dài hạn (spawn 1 lần, tái sử dụng cho mọi export). Bỏ chi phí mở isolate + nạp lại snapshot mỗi lần; **font Windows cho PDF chỉ tải 1 lần** (static cache của `PdfExportService` giờ thực sự có tác dụng). Các request được serialize, tự hồi phục worker nếu chết.
+
+### 📊 Xuất timing vào PPTX
+- **`<p:advTm val="..."/>` trong transition của mỗi slide**: Khi bật auto-advance (Timing > Auto/Duration), file PPTX xuất ra giờ tự chuyển slide theo thời lượng đã đặt — đồng nhất với trình chiếu trong app và HTML deck. Hoạt động ngay cả khi slide không có effect chuyển tiếp.
+
+### 🧹 Dọn dẹp
+- **Xóa `html_to_ppt_screen.dart` (legacy ~1030 dòng)**: màn hình cũ đã bị `editor_shell.dart` thay thế và không còn được điều hướng tới; `ExportFormat` đã có sẵn bản sao trong editor. Code mới gọn hơn, không còn hai luồng export song song.
+
+### 🔢 Version
+- Bump lên `1.0.2+3`; đồng bộ README, CHANGELOG, draft marker.
+
+---
+
+## [1.0.1] - 2026-08-01 — Bản vá nhỏ
+
+### 🎬 Trình chiếu (Slide Show)
+- **Kích hoạt nút Trình chiếu**: Nút Present ở Quick Access Toolbar và Ribbon (From Beginning / From Current) nay mở trình chiếu thật (trước đây là no-op). Nút **Presenter View** nay mở màn hình Presenter View đã xây dựng sẵn nhưng chưa được kết nối.
+- **"From Current"**: Trình chiếu bắt đầu từ slide đang chọn trong editor.
+- **Trình chiếu tự động (Auto-play / Timing)**: Nhóm "Timing" trên Ribbon nay hoạt động — On Click / Auto / Duration (1–60 giây). Thiết lập được lưu giữa các phiên, nhúng vào HTML deck để chuyển slide tự động; có nút Auto ⏸/▶ để tạm dừng ngay trong lúc trình chiếu.
+- **Nút "Thoát"**: Hiển thị nút thoát rõ ràng, có nhãn khi đang trình chiếu (ngoài phím Esc).
+
+### ⚡ Hiệu năng
+- **Export/parse chạy nền bằng isolate**: Export PPTX / PDF / HTML nay chạy trên background isolate qua `compute` — UI không còn bị đứng với deck lớn. Logic sinh nội dung không đổi, chỉ đổi chỗ gọi.
+
+### 🧹 Khác
+- Bump version lên `1.0.1+2`; đồng bộ README, CHANGELOG và draft marker.
+
+---
+
 ## [1.0.0] - 2026-08-01 — PowerPoint-Style Interface (BẢN CẬP NHẬT LỚN NHẤT)
 
 ### 🎨 Giao Diện PowerPoint Microsoft 100%

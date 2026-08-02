@@ -365,6 +365,44 @@ void main() {
       expect(parts['ppt/slides/slide1.xml'], contains('<p:fade/>'));
       expect(parts['ppt/slides/slide2.xml'], contains('<p:zoom/>'));
     });
+
+    test('auto-advance emits p:advTm in every slide transition', () async {
+      final f = File(
+          '${Directory.systemTemp.path}/gen_timing_${DateTime.now().microsecondsSinceEpoch}.pptx');
+      final file = await PPTGenerator.generatePPT(
+        [
+          {'title': 'A', 'htmlContent': '<p>1</p>', 'effect': 'fade'},
+          {'title': 'B', 'htmlContent': '<p>2</p>'},
+        ],
+        f.path,
+        effect: SlideEffect.none,
+        autoAdvance: const Duration(seconds: 4),
+      );
+      final parts = readPptxParts(file);
+      file.deleteSync();
+
+      // Slide with a visual transition also carries the timing element.
+      expect(parts['ppt/slides/slide1.xml'], contains('<p:fade/>'));
+      expect(parts['ppt/slides/slide1.xml'],
+          contains('<p:advTm val="4000"/>'));
+      // Slide with no visual effect still auto-advances.
+      expect(parts['ppt/slides/slide2.xml'], contains('<p:transition'));
+      expect(parts['ppt/slides/slide2.xml'],
+          contains('<p:advTm val="4000"/>'));
+      // Generated XML stays well-formed.
+      expect(() => xml.XmlDocument.parse(parts['ppt/slides/slide1.xml']!),
+          returnsNormally);
+      expect(() => xml.XmlDocument.parse(parts['ppt/slides/slide2.xml']!),
+          returnsNormally);
+    });
+
+    test('no p:advTm when auto-advance is not configured', () async {
+      final parts = await generateParts([
+        {'title': 'A', 'htmlContent': '<p>1</p>'},
+      ]);
+      expect(parts['ppt/slides/slide1.xml'],
+          isNot(contains('<p:advTm')));
+    });
   });
 
   group('v0.3.0 features - package structure', () {
