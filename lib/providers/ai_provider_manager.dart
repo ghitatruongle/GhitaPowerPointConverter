@@ -2,9 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../services/api_key_rotation_service.dart';
+import '../services/local_ai_detector_service.dart';
 import 'config_service.dart';
 
+// =============================================================================
 // AI Provider Configuration
+// =============================================================================
+
 class AIProviderConfig {
   final String id;
   final String name;
@@ -17,6 +22,10 @@ class AIProviderConfig {
   final double temperature;
   final int maxTokens;
 
+  // v1.2.0: Enhanced fields (merged from EnhancedAIProviderConfig)
+  final ProviderHealthStatus healthStatus;
+  final DateTime? lastHealthCheck;
+
   AIProviderConfig({
     required this.id,
     required this.name,
@@ -28,6 +37,8 @@ class AIProviderConfig {
     this.formatType = 'openai',
     this.temperature = 0.7,
     this.maxTokens = 4096,
+    this.healthStatus = ProviderHealthStatus.unknown,
+    this.lastHealthCheck,
   });
 
   AIProviderConfig copyWith({
@@ -41,6 +52,8 @@ class AIProviderConfig {
     String? formatType,
     double? temperature,
     int? maxTokens,
+    ProviderHealthStatus? healthStatus,
+    DateTime? lastHealthCheck,
   }) {
     return AIProviderConfig(
       id: id ?? this.id,
@@ -53,6 +66,8 @@ class AIProviderConfig {
       formatType: formatType ?? this.formatType,
       temperature: temperature ?? this.temperature,
       maxTokens: maxTokens ?? this.maxTokens,
+      healthStatus: healthStatus ?? this.healthStatus,
+      lastHealthCheck: lastHealthCheck ?? this.lastHealthCheck,
     );
   }
 
@@ -68,6 +83,8 @@ class AIProviderConfig {
       'formatType': formatType,
       'temperature': temperature,
       'maxTokens': maxTokens,
+      'healthStatus': healthStatus.index,
+      'lastHealthCheck': lastHealthCheck?.toIso8601String(),
     };
   }
 
@@ -88,7 +105,20 @@ class AIProviderConfig {
       formatType: map['formatType'] ?? 'openai',
       temperature: (map['temperature'] as num?)?.toDouble() ?? 0.7,
       maxTokens: map['maxTokens'] as int? ?? 4096,
+      healthStatus: _parseHealthStatus(map['healthStatus']),
+      lastHealthCheck: map['lastHealthCheck'] != null
+          ? DateTime.tryParse(map['lastHealthCheck'])
+          : null,
     );
+  }
+
+  /// v1.2.0: Safe health status parsing with bounds check.
+  static ProviderHealthStatus _parseHealthStatus(dynamic value) {
+    final idx = (value as int?) ?? 0;
+    if (idx >= 0 && idx < ProviderHealthStatus.values.length) {
+      return ProviderHealthStatus.values[idx];
+    }
+    return ProviderHealthStatus.unknown;
   }
 
   static AIProviderConfig defaultProvider() {
@@ -97,12 +127,7 @@ class AIProviderConfig {
       name: 'OpenAI (GPT-4o / GPT-3.5)',
       baseUrl: 'https://api.openai.com',
       apiKey: '',
-      availableModels: [
-        'gpt-4o',
-        'gpt-4o-mini',
-        'gpt-3.5-turbo',
-        'o1-preview',
-      ],
+      availableModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo', 'o1-preview'],
       selectedModel: 'gpt-4o',
       contextWindow: 128000,
       formatType: 'openai',
@@ -136,10 +161,7 @@ class AIProviderConfig {
       name: 'Google Gemini',
       baseUrl: 'https://generativelanguage.googleapis.com',
       apiKey: '',
-      availableModels: [
-        'gemini-2.5-flash',
-        'gemini-2.5-pro',
-      ],
+      availableModels: ['gemini-2.5-flash', 'gemini-2.5-pro'],
       selectedModel: 'gemini-2.5-flash',
       contextWindow: 1000000,
       formatType: 'gemini',
@@ -154,11 +176,7 @@ class AIProviderConfig {
       name: 'Ollama (Local)',
       baseUrl: 'http://localhost:11434/v1',
       apiKey: '',
-      availableModels: [
-        'llama3.1',
-        'mistral',
-        'qwen2.5',
-      ],
+      availableModels: ['llama3.1', 'mistral', 'qwen2.5'],
       selectedModel: 'llama3.1',
       contextWindow: 32768,
       formatType: 'openai',
@@ -176,14 +194,80 @@ class AIProviderConfig {
   /// Validate that this provider has all required non-secret fields.
   bool get isValid => id.isNotEmpty && baseUrl.isNotEmpty && selectedModel.isNotEmpty;
 
-  /// Convenience getter for backward compatibility in a few places.
+  /// Convenience getter for backward compatibility.
   String get model => selectedModel;
 }
+
+// =============================================================================
+// Provider Health Status
+// =============================================================================
+
+enum ProviderHealthStatus {
+  unknown,
+  healthy,
+  degraded,
+  failed;
+
+  String get displayName {
+    switch (this) {
+      case ProviderHealthStatus.unknown:
+        return 'Chưa kiểm tra';
+      case ProviderHealthStatus.healthy:
+        return 'Hoạt động tốt';
+      case ProviderHealthStatus.degraded:
+        return 'Chậm / không ổn định';
+      case ProviderHealthStatus.failed:
+        return 'Không kết nối được';
+    }
+  }
+
+  String get iconName {
+    switch (this) {
+      case ProviderHealthStatus.unknown:
+        return 'help_outline';
+      case ProviderHealthStatus.healthy:
+        return 'check_circle';
+      case ProviderHealthStatus.degraded:
+        return 'warning';
+      case ProviderHealthStatus.failed:
+        return 'error_outline';
+    }
+  }
+}
+
+// =============================================================================
+// Ping Result
+// =============================================================================
+
+class PingResult {
+  final bool isSuccess;
+  final int latencyMs;
+  final String? errorMessage;
+
+  const PingResult({
+    required this.isSuccess,
+    required this.latencyMs,
+    this.errorMessage,
+  });
+}
+
+// =============================================================================
+// AI Provider Manager — Unified (merged from EnhancedAIProviderManager)
+// =============================================================================
 
 class AIProviderManager with ChangeNotifier {
   List<AIProviderConfig> _providers = [];
   AIProviderConfig? _selectedProvider;
   final ConfigService _configService = ConfigService();
+  final APIKeyRotationService _rotationService = APIKeyRotationService();
+  final LocalAIDetectorService _localDetector = LocalAIDetectorService();
+
+  // Shared HTTP client for connection pooling (v1.2.0)
+  final http.Client _sharedClient = http.Client();
+
+  // Health monitoring timer (v1.2.0)
+  Timer? _healthTimer;
+  bool _disposed = false;
 
   // Custom system prompt for slide generation
   String _systemPrompt =
@@ -193,9 +277,20 @@ class AIProviderManager with ChangeNotifier {
       'No external CSS/JS references.';
 
   String get systemPrompt => _systemPrompt;
-
   List<AIProviderConfig> get providers => _providers;
   AIProviderConfig? get selectedProvider => _selectedProvider;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _healthTimer?.cancel();
+    _sharedClient.close();
+    super.dispose();
+  }
+
+  // ===========================================================================
+  // Provider CRUD & Persistence
+  // ===========================================================================
 
   Future<void> loadProviders() async {
     try {
@@ -203,7 +298,7 @@ class AIProviderManager with ChangeNotifier {
       if (_providers.isEmpty) {
         _providers = [AIProviderConfig.defaultProvider()];
       }
-      // Re-inject apiKey from secure storage for each.
+      // Re-inject apiKey from secure storage for each provider.
       for (var i = 0; i < _providers.length; i++) {
         final p = _providers[i];
         final storedKey = await _configService.loadApiKey(p.id);
@@ -224,8 +319,12 @@ class AIProviderManager with ChangeNotifier {
         _systemPrompt = savedPrompt;
       }
 
+      // Start health monitoring (v1.2.0)
+      _startHealthMonitoring();
+
       notifyListeners();
     } catch (e) {
+      debugPrint('Error loading providers: $e');
       _providers = [AIProviderConfig.defaultProvider()];
       _selectedProvider = _providers.first;
       notifyListeners();
@@ -246,13 +345,130 @@ class AIProviderManager with ChangeNotifier {
     }
   }
 
-  /// Automatically fetches the list of available models from the provider endpoint (/v1/models or Gemini API).
+  void addProvider(AIProviderConfig newProvider) {
+    _providers.add(newProvider);
+    if (_selectedProvider == null) {
+      _selectedProvider = newProvider;
+      unawaited(_configService.saveSelectedProvider(newProvider.id));
+    }
+    unawaited(_configService.saveProviders(_providers));
+    notifyListeners();
+  }
+
+  void updateProvider(AIProviderConfig updatedProvider) {
+    if (_disposed) return; // v1.2.0: guard against post-dispose notify
+    final index = _providers.indexWhere((p) => p.id == updatedProvider.id);
+    if (index != -1) {
+      _providers[index] = updatedProvider;
+      if (_selectedProvider?.id == updatedProvider.id) {
+        _selectedProvider = updatedProvider;
+      }
+      unawaited(_configService.saveProviders(_providers));
+      if (updatedProvider.apiKey.isNotEmpty) {
+        unawaited(_configService.saveApiKey(updatedProvider.id, updatedProvider.apiKey));
+      }
+      notifyListeners();
+    }
+  }
+
+  void removeProvider(String providerId) {
+    _providers.removeWhere((p) => p.id == providerId);
+    if (_selectedProvider?.id == providerId) {
+      _selectedProvider = _providers.isNotEmpty ? _providers.first : null;
+    }
+    unawaited(_configService.saveSelectedProvider(_selectedProvider?.id));
+    unawaited(_configService.saveProviders(_providers));
+    unawaited(_configService.saveApiKey(providerId, ''));
+    notifyListeners();
+  }
+
+  /// Save (encrypt) the API key to secure storage for the selected provider.
+  Future<void> saveApiKeyForSelected(String apiKey) async {
+    final provider = _selectedProvider;
+    if (provider == null) throw Exception('No provider selected');
+    final idx = _providers.indexWhere((p) => p.id == provider.id);
+    if (idx == -1) throw Exception('Provider not found in list');
+    await _configService.saveApiKey(provider.id, apiKey);
+    _providers[idx] = provider.copyWith(apiKey: apiKey);
+    notifyListeners();
+  }
+
+  // ===========================================================================
+  // Health Monitoring (v1.2.0 — from EnhancedAIProviderManager)
+  // ===========================================================================
+
+  void _startHealthMonitoring() {
+    _healthTimer?.cancel();
+    _healthTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
+      if (_disposed) {
+        timer.cancel();
+        return;
+      }
+      _performHealthChecks();
+    });
+  }
+
+  Future<void> _performHealthChecks() async {
+    for (final provider in _providers) {
+      if (_disposed) return; // v1.2.0: return, not just break
+      await testProviderPing(provider);
+      if (_disposed) return; // re-check after await
+    }
+  }
+
+  /// Test a provider's connection and update its health status.
+  Future<PingResult> testProviderPing(AIProviderConfig config) async {
+    final stopwatch = Stopwatch()..start();
+    try {
+      final isValid = await _rotationService.testAPIKey(
+        config.baseUrl,
+        config.apiKey,
+        config.id,
+      );
+      stopwatch.stop();
+
+      final status = isValid ? ProviderHealthStatus.healthy : ProviderHealthStatus.failed;
+      final updated = config.copyWith(
+        healthStatus: status,
+        lastHealthCheck: DateTime.now(),
+      );
+      updateProvider(updated);
+
+      return PingResult(
+        isSuccess: isValid,
+        latencyMs: stopwatch.elapsedMilliseconds,
+      );
+    } catch (e) {
+      stopwatch.stop();
+      final updated = config.copyWith(
+        healthStatus: ProviderHealthStatus.failed,
+        lastHealthCheck: DateTime.now(),
+      );
+      updateProvider(updated);
+
+      return PingResult(
+        isSuccess: false,
+        latencyMs: stopwatch.elapsedMilliseconds,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
+  /// Scan for local AI services (Ollama, LM Studio, vLLM).
+  Future<List<LocalAIServiceInfo>> scanLocalAI() async {
+    return await _localDetector.scanLocalAIServices();
+  }
+
+  // ===========================================================================
+  // Model Fetching
+  // ===========================================================================
+
   Future<List<String>> fetchAvailableModels(AIProviderConfig config) async {
     try {
       final List<String> fetchedModels = [];
       if (config.formatType == 'gemini') {
         final url = Uri.parse('${config.baseUrl}/v1beta/models?key=${config.apiKey}');
-        final res = await http.get(url).timeout(const Duration(seconds: 5));
+        final res = await _sharedClient.get(url).timeout(const Duration(seconds: 5));
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body);
           if (data['models'] is List) {
@@ -273,7 +489,7 @@ class AIProviderManager with ChangeNotifier {
             headers['Authorization'] = 'Bearer ${config.apiKey}';
           }
         }
-        final res = await http.get(url, headers: headers).timeout(const Duration(seconds: 5));
+        final res = await _sharedClient.get(url, headers: headers).timeout(const Duration(seconds: 5));
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body);
           if (data['data'] is List) {
@@ -291,6 +507,8 @@ class AIProviderManager with ChangeNotifier {
           selectedModel: fetchedModels.contains(config.selectedModel)
               ? config.selectedModel
               : fetchedModels.first,
+          healthStatus: ProviderHealthStatus.healthy,
+          lastHealthCheck: DateTime.now(),
         );
         updateProvider(updated);
         return fetchedModels;
@@ -301,57 +519,10 @@ class AIProviderManager with ChangeNotifier {
     return config.availableModels;
   }
 
-  void addProvider(AIProviderConfig newProvider) {
-    _providers.add(newProvider);
-    if (_selectedProvider == null) {
-      _selectedProvider = newProvider;
-      unawaited(_configService.saveSelectedProvider(newProvider.id));
-    }
-    unawaited(_configService.saveProviders(_providers));
-    notifyListeners();
-  }
+  // ===========================================================================
+  // Error Handling & Validation
+  // ===========================================================================
 
-  void updateProvider(AIProviderConfig updatedProvider) {
-    final index = _providers.indexWhere((p) => p.id == updatedProvider.id);
-    if (index != -1) {
-      _providers[index] = updatedProvider;
-      if (_selectedProvider?.id == updatedProvider.id) {
-        _selectedProvider = updatedProvider;
-      }
-      unawaited(_configService.saveProviders(_providers));
-      // Also persist apiKey to secure storage if present.
-      if (updatedProvider.apiKey.isNotEmpty) {
-        unawaited(_configService.saveApiKey(updatedProvider.id, updatedProvider.apiKey));
-      }
-      notifyListeners();
-    }
-  }
-
-  void removeProvider(String providerId) {
-    _providers.removeWhere((p) => p.id == providerId);
-    if (_selectedProvider?.id == providerId) {
-      _selectedProvider = _providers.isNotEmpty ? _providers.first : null;
-    }
-    unawaited(_configService.saveSelectedProvider(_selectedProvider?.id));
-    unawaited(_configService.saveProviders(_providers));
-    // Also delete the secure key for this provider.
-    unawaited(_configService.saveApiKey(providerId, ''));
-    notifyListeners();
-  }
-
-  /// Save (encrypt) the API key to secure storage for the given provider.
-  Future<void> saveApiKeyForSelected(String apiKey) async {
-    final provider = _selectedProvider;
-    if (provider == null) throw Exception('No provider selected');
-    await _configService.saveApiKey(provider.id, apiKey);
-    _providers[_providers.indexWhere((p) => p.id == provider.id)] =
-        provider.copyWith(apiKey: apiKey);
-    notifyListeners();
-  }
-
-  // ---- Error handling helpers ----
-
-  /// Classify HTTP error into a user-friendly message.
   static String _friendlyErrorMessage(int statusCode, String body) {
     switch (statusCode) {
       case 400:
@@ -378,51 +549,33 @@ class AIProviderManager with ChangeNotifier {
     }
   }
 
-  /// Validate provider config and return an error message, or null if valid.
   static String? validateProvider(AIProviderConfig provider) {
-    if (provider.id.trim().isEmpty) {
-      return 'Provider ID cannot be empty.';
-    }
-    if (provider.name.trim().isEmpty) {
-      return 'Provider name cannot be empty.';
-    }
-    if (provider.baseUrl.trim().isEmpty) {
-      return 'Base URL cannot be empty.';
-    }
+    if (provider.id.trim().isEmpty) return 'Provider ID cannot be empty.';
+    if (provider.name.trim().isEmpty) return 'Provider name cannot be empty.';
+    if (provider.baseUrl.trim().isEmpty) return 'Base URL cannot be empty.';
     final uri = Uri.tryParse(provider.baseUrl.trim());
     if (uri == null || (!uri.hasScheme || !uri.hasAuthority)) {
       return 'Base URL is not a valid URL (must start with http:// or https://).';
     }
-    if (provider.availableModels.isEmpty) {
-      return 'Provider must have at least 1 model configured.';
-    }
-    if (provider.selectedModel.isEmpty) {
-      return 'No model selected. Please choose an active model.';
-    }
-    if (provider.contextWindow <= 0) {
-      return 'Context window must be a positive number.';
-    }
-    if (provider.temperature < 0 || provider.temperature > 2) {
-      return 'Temperature must be between 0.0 and 2.0.';
-    }
-    if (provider.maxTokens <= 0) {
-      return 'Max tokens must be a positive number.';
-    }
+    if (provider.availableModels.isEmpty) return 'Provider must have at least 1 model configured.';
+    if (provider.selectedModel.isEmpty) return 'No model selected. Please choose an active model.';
+    if (provider.contextWindow <= 0) return 'Context window must be a positive number.';
+    if (provider.temperature < 0 || provider.temperature > 2) return 'Temperature must be between 0.0 and 2.0.';
+    if (provider.maxTokens <= 0) return 'Max tokens must be a positive number.';
     return null;
   }
 
-  // ---- Single slide generation ----
+  // ===========================================================================
+  // Provider Readiness Check
+  // ===========================================================================
 
-  /// Validate the selected provider is ready for a call; returns it.
   AIProviderConfig _ensureReady() {
     final provider = _selectedProvider;
     if (provider == null) {
       throw Exception('No provider selected. Please configure a provider in settings.');
     }
     if (provider.apiKey.isEmpty && provider.requiresApiKey) {
-      throw Exception(
-        'API key not set for "${provider.name}". Enter it in Provider Settings.',
-      );
+      throw Exception('API key not set for "${provider.name}". Enter it in Provider Settings.');
     }
     if (!provider.isValid) {
       throw Exception('Provider "${provider.name}" is not fully configured.');
@@ -430,20 +583,22 @@ class AIProviderManager with ChangeNotifier {
     return provider;
   }
 
+  // ===========================================================================
+  // Single Slide Generation
+  // ===========================================================================
+
   Future<String> generateHtmlFromPrompt(String prompt) async {
     final provider = _ensureReady();
-
     try {
       switch (provider.formatType) {
         case 'openai':
+        case 'custom':
           return await _callOpenAI(provider, prompt);
         case 'anthropic':
           return await _callAnthropic(provider, prompt);
         case 'gemini':
           return await _callGemini(provider,
               'Generate single slide HTML presentation content for: $prompt', _systemPrompt);
-        case 'custom':
-          return await _callOpenAI(provider, prompt);
         default:
           return await _callOpenAI(provider, prompt);
       }
@@ -456,30 +611,29 @@ class AIProviderManager with ChangeNotifier {
   Future<String> generateSlideContent(String prompt, {String? customPrompt}) async {
     final provider = _ensureReady();
     final sysPrompt = customPrompt ?? _systemPrompt;
-
     try {
       switch (provider.formatType) {
         case 'openai':
-          return await _callOpenAI(provider, prompt);
+        case 'custom':
+          return await _callOpenAI(provider, prompt, systemPrompt: sysPrompt);
         case 'anthropic':
-          return await _callAnthropic(provider, prompt);
+          return await _callAnthropic(provider, prompt, systemPrompt: sysPrompt);
         case 'gemini':
           return await _callGemini(provider, prompt, sysPrompt);
         default:
-          return await _callOpenAI(provider, prompt);
+          return await _callOpenAI(provider, prompt, systemPrompt: sysPrompt);
       }
     } catch (e) {
       throw Exception('Failed to generate slide content: $e');
     }
   }
 
-  // ---- Multi-slide generation ----
+  // ===========================================================================
+  // Multi-Slide Generation
+  // ===========================================================================
 
-  /// Generate multiple slides from a single prompt.
-  /// Returns a list of slide maps with 'title' and 'htmlContent' keys.
   Future<List<Map<String, String>>> generateMultipleSlides(String topic, {int slideCount = 3}) async {
     final provider = _ensureReady();
-
     final multiSlideSystemPrompt = '$_systemPrompt\n'
         'Return a JSON array of slide objects. Each object must have:\n'
         '  - "title": slide title (string)\n'
@@ -500,13 +654,12 @@ class AIProviderManager with ChangeNotifier {
     }
   }
 
-  // ---- Outline mode ----
+  // ===========================================================================
+  // Outline Mode
+  // ===========================================================================
 
-  /// Generate a presentation outline: list of {title, bullets} entries.
-  Future<List<Map<String, dynamic>>> generateOutline(String topic,
-      {int slideCount = 5}) async {
+  Future<List<Map<String, dynamic>>> generateOutline(String topic, {int slideCount = 5}) async {
     final provider = _ensureReady();
-
     final outlinePrompt =
         'You are a presentation planner. Create an outline for a presentation.\n'
         'Return ONLY a valid JSON array with exactly $slideCount objects. Each object has:\n'
@@ -523,7 +676,6 @@ class AIProviderManager with ChangeNotifier {
     return parseOutlineJson(raw);
   }
 
-  /// Parse outline JSON (public for unit testing).
   static List<Map<String, dynamic>> parseOutlineJson(String raw) {
     final jsonStr = _extractJsonArrayStatic(raw) ?? raw;
     try {
@@ -542,30 +694,26 @@ class AIProviderManager with ChangeNotifier {
     }
   }
 
-  /// Generate the HTML for a single slide from an outline entry.
-  Future<String> generateSlideFromOutline(
-      String topic, Map<String, dynamic> outlineEntry) async {
+  Future<String> generateSlideFromOutline(String topic, Map<String, dynamic> outlineEntry) async {
     final title = (outlineEntry['title'] ?? '').toString();
-    final bullets =
-        ((outlineEntry['bullets'] as List?) ?? const []).join('; ');
-    final prompt =
-        'Topic: $topic. Create the slide titled "$title" covering: $bullets';
+    final bullets = ((outlineEntry['bullets'] as List?) ?? const []).join('; ');
+    final prompt = 'Topic: $topic. Create the slide titled "$title" covering: $bullets';
     return generateHtmlFromPrompt(prompt);
   }
 
-  // ---- Streaming generation ----
+  // ===========================================================================
+  // Streaming Generation
+  // ===========================================================================
 
   http.Client? _streamClient;
   bool _streamCancelled = false;
 
-  /// Cancel an in-flight streaming request, if any.
   void cancelStream() {
     _streamCancelled = true;
     _streamClient?.close();
     _streamClient = null;
   }
 
-  /// Generate HTML for a single slide, streaming text chunks as they arrive.
   Stream<String> generateHtmlFromPromptStream(String prompt) async* {
     final provider = _ensureReady();
     final client = http.Client();
@@ -576,8 +724,7 @@ class AIProviderManager with ChangeNotifier {
       final http.Request request;
       switch (provider.formatType) {
         case 'anthropic':
-          request = http.Request(
-              'POST', Uri.parse('${provider.baseUrl}/v1/messages'))
+          request = http.Request('POST', Uri.parse('${provider.baseUrl}/v1/messages'))
             ..headers.addAll({
               'x-api-key': provider.apiKey,
               'anthropic-version': '2023-06-01',
@@ -591,8 +738,7 @@ class AIProviderManager with ChangeNotifier {
               'messages': [
                 {
                   'role': 'user',
-                  'content':
-                      'Generate presentation HTML slide content for: $prompt',
+                  'content': 'Generate presentation HTML slide content for: $prompt',
                 },
               ],
             });
@@ -610,8 +756,7 @@ class AIProviderManager with ChangeNotifier {
                 'Generate single slide HTML presentation content for: $prompt', _systemPrompt));
           break;
         default: // openai / custom
-          request = http.Request(
-              'POST', Uri.parse('${provider.baseUrl}/v1/chat/completions'))
+          request = http.Request('POST', Uri.parse('${provider.baseUrl}/v1/chat/completions'))
             ..headers.addAll({
               'Authorization': 'Bearer ${provider.apiKey}',
               'Content-Type': 'application/json',
@@ -623,8 +768,7 @@ class AIProviderManager with ChangeNotifier {
                 {'role': 'system', 'content': _systemPrompt},
                 {
                   'role': 'user',
-                  'content':
-                      'Generate single slide HTML presentation content for: $prompt',
+                  'content': 'Generate single slide HTML presentation content for: $prompt',
                 },
               ],
               'temperature': provider.temperature,
@@ -639,11 +783,12 @@ class AIProviderManager with ChangeNotifier {
       }
 
       // Parse SSE lines across chunk boundaries.
+      // v1.2.0: Also handle Anthropic event: lines
       var buffer = '';
       await for (final chunk in response.stream.transform(utf8.decoder)) {
         buffer += chunk;
         final lines = buffer.split('\n');
-        buffer = lines.removeLast(); // keep incomplete tail
+        buffer = lines.removeLast();
         for (final line in lines) {
           final delta = parseStreamLine(provider.formatType, line);
           if (delta != null && delta.isNotEmpty) yield delta;
@@ -652,8 +797,6 @@ class AIProviderManager with ChangeNotifier {
       final delta = parseStreamLine(provider.formatType, buffer);
       if (delta != null && delta.isNotEmpty) yield delta;
     } on http.ClientException {
-      // ClientException also wraps genuine network failures (connection
-      // refused, reset mid-stream) — only swallow it for an explicit cancel.
       if (!_streamCancelled) rethrow;
     } finally {
       if (identical(_streamClient, client)) _streamClient = null;
@@ -662,18 +805,29 @@ class AIProviderManager with ChangeNotifier {
   }
 
   /// Parse a single SSE line into a text delta (public for unit testing).
-  /// Returns null when the line carries no text.
+  /// v1.2.0: Improved Anthropic streaming — handles event: lines and message_delta.
   static String? parseStreamLine(String formatType, String line) {
     final trimmed = line.trim();
+    if (trimmed.isEmpty) return null;
+
+    // Skip Anthropic event: lines (we only care about data: lines)
+    if (trimmed.startsWith('event:')) return null;
+
     if (!trimmed.startsWith('data:')) return null;
     final payload = trimmed.substring(5).trim();
     if (payload.isEmpty || payload == '[DONE]') return null;
+
     try {
       final data = jsonDecode(payload);
       switch (formatType) {
         case 'anthropic':
+          // Handle content_block_delta for text streaming
           if (data['type'] == 'content_block_delta') {
             return data['delta']?['text'] as String?;
+          }
+          // Handle message_delta for stop reasons
+          if (data['type'] == 'message_delta') {
+            return null;
           }
           return null;
         case 'gemini':
@@ -692,16 +846,15 @@ class AIProviderManager with ChangeNotifier {
     }
   }
 
+  // ===========================================================================
+  // JSON Parsing Helpers
+  // ===========================================================================
+
   List<Map<String, String>> _parseSlideJson(String raw, int expectedCount) {
-    // Try to extract JSON array from the response
     final jsonStr = _extractJsonArray(raw);
     if (jsonStr == null) {
-      // Fallback: treat entire response as a single slide
-      return [
-        {'title': 'Generated Slide', 'htmlContent': raw},
-      ];
+      return [{'title': 'Generated Slide', 'htmlContent': raw}];
     }
-
     try {
       final List<dynamic> slides = jsonDecode(jsonStr);
       return slides.map((s) {
@@ -712,25 +865,17 @@ class AIProviderManager with ChangeNotifier {
         };
       }).toList();
     } catch (e) {
-      // JSON parsing failed — return single slide fallback
-      return [
-        {'title': 'Generated Slide', 'htmlContent': raw},
-      ];
+      return [{'title': 'Generated Slide', 'htmlContent': raw}];
     }
   }
 
-  /// Extract a JSON array from text that may contain markdown fences or extra text.
   String? _extractJsonArray(String text) => _extractJsonArrayStatic(text);
 
   static String? _extractJsonArrayStatic(String text) {
-    // Try to find content between ```json and ``` markers
     final codeBlockMatch = RegExp(r'```(?:json)?\s*([\s\S]*?)```').firstMatch(text);
     if (codeBlockMatch != null) {
       return codeBlockMatch.group(1)?.trim();
     }
-    // Scan for a balanced top-level JSON array (handles nested arrays and
-    // strings, which a non-greedy regex would truncate).
-    // Limit scan to last 100KB to avoid O(n) stalls on very long responses.
     const maxScan = 102400;
     final scanStart = text.length > maxScan ? text.length - maxScan : 0;
     final start = text.indexOf('[', scanStart);
@@ -741,7 +886,7 @@ class AIProviderManager with ChangeNotifier {
       final c = text[i];
       if (inString) {
         if (c == r'\') {
-          i++; // skip escaped character
+          i++;
         } else if (c == '"') {
           inString = false;
         }
@@ -759,12 +904,13 @@ class AIProviderManager with ChangeNotifier {
     return null;
   }
 
-  // ---- OpenAI calls ----
+  // ===========================================================================
+  // OpenAI API Calls (shared client v1.2.0)
+  // ===========================================================================
 
-  Future<String> _callOpenAI(AIProviderConfig config, String prompt) async {
-    final client = http.Client();
+  Future<String> _callOpenAI(AIProviderConfig config, String prompt, {String? systemPrompt}) async {
     try {
-      final response = await client.post(
+      final response = await _sharedClient.post(
         Uri.parse('${config.baseUrl}/v1/chat/completions'),
         headers: {
           'Authorization': 'Bearer ${config.apiKey}',
@@ -773,11 +919,10 @@ class AIProviderManager with ChangeNotifier {
         body: jsonEncode({
           'model': config.selectedModel,
           'messages': [
-            {'role': 'system', 'content': _systemPrompt},
+            {'role': 'system', 'content': systemPrompt ?? _systemPrompt},
             {
               'role': 'user',
-              'content':
-                  'Generate single slide HTML presentation content for: $prompt',
+              'content': 'Generate single slide HTML presentation content for: $prompt',
             },
           ],
           'temperature': config.temperature,
@@ -787,20 +932,26 @@ class AIProviderManager with ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['choices'][0]['message']['content'] ?? '';
+        final choices = data['choices'] as List?;
+        if (choices == null || choices.isEmpty) {
+          throw Exception('API returned empty choices.');
+        }
+        final content = choices[0]['message']?['content'];
+        return (content ?? '').toString();
       } else {
         throw Exception(_friendlyErrorMessage(response.statusCode, response.body));
       }
-    } finally {
-      client.close();
+    } catch (e) {
+      if (e.toString().contains('SocketException') || e.toString().contains('Connection')) {
+        throw Exception('Network error: Unable to reach ${config.name}. Check your connection.');
+      }
+      rethrow;
     }
   }
 
-  Future<String> _callOpenAIMulti(
-      AIProviderConfig config, String topic, String systemPrompt) async {
-    final client = http.Client();
+  Future<String> _callOpenAIMulti(AIProviderConfig config, String topic, String systemPrompt) async {
     try {
-      final response = await client.post(
+      final response = await _sharedClient.post(
         Uri.parse('${config.baseUrl}/v1/chat/completions'),
         headers: {
           'Authorization': 'Bearer ${config.apiKey}',
@@ -819,21 +970,30 @@ class AIProviderManager with ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['choices'][0]['message']['content'] ?? '';
+        final choices = data['choices'] as List?;
+        if (choices == null || choices.isEmpty) {
+          throw Exception('API returned empty choices.');
+        }
+        final content = choices[0]['message']?['content'];
+        return (content ?? '').toString();
       } else {
         throw Exception(_friendlyErrorMessage(response.statusCode, response.body));
       }
-    } finally {
-      client.close();
+    } catch (e) {
+      if (e.toString().contains('SocketException') || e.toString().contains('Connection')) {
+        throw Exception('Network error: unable to reach ${config.name}.');
+      }
+      rethrow;
     }
   }
 
-  // ---- Anthropic calls ----
+  // ===========================================================================
+  // Anthropic API Calls (shared client v1.2.0)
+  // ===========================================================================
 
-  Future<String> _callAnthropic(AIProviderConfig config, String prompt) async {
-    final client = http.Client();
+  Future<String> _callAnthropic(AIProviderConfig config, String prompt, {String? systemPrompt}) async {
     try {
-      final response = await client.post(
+      final response = await _sharedClient.post(
         Uri.parse('${config.baseUrl}/v1/messages'),
         headers: {
           'x-api-key': config.apiKey,
@@ -843,12 +1003,11 @@ class AIProviderManager with ChangeNotifier {
         body: jsonEncode({
           'model': config.selectedModel,
           'max_tokens': config.maxTokens,
-          'system': _systemPrompt,
+          'system': systemPrompt ?? _systemPrompt,
           'messages': [
             {
               'role': 'user',
-              'content':
-                  'Generate presentation HTML slide content for: $prompt',
+              'content': 'Generate presentation HTML slide content for: $prompt',
             },
           ],
         }),
@@ -856,20 +1015,25 @@ class AIProviderManager with ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['content'][0]['text'] ?? '';
+        final contentList = data['content'] as List?;
+        if (contentList == null || contentList.isEmpty) {
+          throw Exception('Anthropic returned empty content.');
+        }
+        return (contentList[0]['text'] ?? '').toString();
       } else {
         throw Exception(_friendlyErrorMessage(response.statusCode, response.body));
       }
-    } finally {
-      client.close();
+    } catch (e) {
+      if (e.toString().contains('SocketException') || e.toString().contains('Connection')) {
+        throw Exception('Network error: unable to reach ${config.name}.');
+      }
+      rethrow;
     }
   }
 
-  Future<String> _callAnthropicMulti(
-      AIProviderConfig config, String topic, String systemPrompt) async {
-    final client = http.Client();
+  Future<String> _callAnthropicMulti(AIProviderConfig config, String topic, String systemPrompt) async {
     try {
-      final response = await client.post(
+      final response = await _sharedClient.post(
         Uri.parse('${config.baseUrl}/v1/messages'),
         headers: {
           'x-api-key': config.apiKey,
@@ -888,31 +1052,35 @@ class AIProviderManager with ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['content'][0]['text'] ?? '';
+        final contentList = data['content'] as List?;
+        if (contentList == null || contentList.isEmpty) {
+          throw Exception('Anthropic returned empty content.');
+        }
+        return (contentList[0]['text'] ?? '').toString();
       } else {
         throw Exception(_friendlyErrorMessage(response.statusCode, response.body));
       }
-    } finally {
-      client.close();
+    } catch (e) {
+      if (e.toString().contains('SocketException') || e.toString().contains('Connection')) {
+        throw Exception('Network error: unable to reach ${config.name}.');
+      }
+      rethrow;
     }
   }
 
-  // ---- Gemini calls ----
+  // ===========================================================================
+  // Gemini API Calls (shared client v1.2.0)
+  // ===========================================================================
 
-  static Map<String, dynamic> _geminiBody(
-      AIProviderConfig config, String userText, String systemPrompt) {
+  static Map<String, dynamic> _geminiBody(AIProviderConfig config, String userText, String systemPrompt) {
     return {
       'systemInstruction': {
-        'parts': [
-          {'text': systemPrompt}
-        ]
+        'parts': [{'text': systemPrompt}]
       },
       'contents': [
         {
           'role': 'user',
-          'parts': [
-            {'text': userText}
-          ]
+          'parts': [{'text': userText}]
         }
       ],
       'generationConfig': {
@@ -922,13 +1090,10 @@ class AIProviderManager with ChangeNotifier {
     };
   }
 
-  Future<String> _callGemini(
-      AIProviderConfig config, String userText, String systemPrompt) async {
-    final client = http.Client();
+  Future<String> _callGemini(AIProviderConfig config, String userText, String systemPrompt) async {
     try {
-      final response = await client.post(
-        Uri.parse(
-            '${config.baseUrl}/v1beta/models/${config.selectedModel}:generateContent'),
+      final response = await _sharedClient.post(
+        Uri.parse('${config.baseUrl}/v1beta/models/${config.selectedModel}:generateContent'),
         headers: {
           'x-goog-api-key': config.apiKey,
           'Content-Type': 'application/json',
@@ -948,8 +1113,11 @@ class AIProviderManager with ChangeNotifier {
       } else {
         throw Exception(_friendlyErrorMessage(response.statusCode, response.body));
       }
-    } finally {
-      client.close();
+    } catch (e) {
+      if (e.toString().contains('SocketException') || e.toString().contains('Connection')) {
+        throw Exception('Network error: unable to reach ${config.name}.');
+      }
+      rethrow;
     }
   }
 }

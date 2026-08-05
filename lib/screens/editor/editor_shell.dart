@@ -5,10 +5,12 @@ import '../../providers/presentation_state.dart';
 import '../../services/template_service.dart';
 import '../../models/slide_template.dart';
 import '../../screens/present_screen.dart';
-import '../../screens/widgets/slide_preview.dart';
 import 'editor_state.dart';
 import 'slide_list_panel.dart';
 import 'html_editor_panel.dart';
+import '../widgets/advanced_export_dialog.dart';
+import '../widgets/collaboration_panel.dart';
+import '../../l10n/l10n.dart';
 
 /// Main editor shell with PowerPoint-style 3-panel layout:
 /// Left: Slide thumbnails | Center: HTML editor + preview | Right: (future Properties)
@@ -38,147 +40,15 @@ class _EditorShellState extends State<EditorShell> {
 
   // ---- Export Dialog ----
 
-  Future<void> _showExportDialog() async {
-    final nameController = TextEditingController(text: 'Presentation_Output');
-    ExportFormat selectedFormat = ExportFormat.pptx;
+  Future<void> _showExportDialog() => showDialog<void>(
+        context: context,
+        builder: (_) => const AdvancedExportDialog(),
+      );
 
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Export Presentation'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Choose a file name and format:'),
-              const SizedBox(height: 12),
-              SegmentedButton<ExportFormat>(
-                segments: const [
-                  ButtonSegment(
-                    value: ExportFormat.pptx,
-                    label: Text('PPTX'),
-                    icon: Icon(Icons.slideshow, size: 18),
-                  ),
-                  ButtonSegment(
-                    value: ExportFormat.html,
-                    label: Text('HTML'),
-                    icon: Icon(Icons.html, size: 18),
-                  ),
-                  ButtonSegment(
-                    value: ExportFormat.pdf,
-                    label: Text('PDF'),
-                    icon: Icon(Icons.picture_as_pdf, size: 18),
-                  ),
-                ],
-                selected: {selectedFormat},
-                onSelectionChanged: (Set<ExportFormat> newSelection) {
-                  setDialogState(() {
-                    selectedFormat = newSelection.first;
-                    nameController.text = selectedFormat == ExportFormat.pptx
-                        ? 'Presentation_Output'
-                        : 'presentation';
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: nameController,
-                decoration: InputDecoration(
-                  labelText: 'File Name',
-                  suffixText: switch (selectedFormat) {
-                    ExportFormat.pptx => '.pptx',
-                    ExportFormat.html => '.html',
-                    ExportFormat.pdf => '.pdf',
-                  },
-                  border: const OutlineInputBorder(),
-                ),
-                autofocus: true,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final name = nameController.text.trim();
-                if (name.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please enter a file name')),
-                  );
-                  return;
-                }
-                Navigator.pop(context, '$name|${selectedFormat.index}');
-              },
-              child: Text(switch (selectedFormat) {
-                ExportFormat.pptx => 'Export PPTX',
-                ExportFormat.html => 'Export HTML',
-                ExportFormat.pdf => 'Export PDF',
-              }),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    nameController.dispose();
-
-    if (result != null) {
-      final parts = result.split('|');
-      final name = parts[0];
-      final formatIndex = int.parse(parts[1]);
-      final format = ExportFormat.values[formatIndex];
-      await _performExport(name, format);
-    }
-  }
-
-  Future<void> _performExport(String fileName, ExportFormat format) async {
-    final presentationState =
-        Provider.of<PresentationState>(context, listen: false);
-    if (presentationState.slides.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No slides to export! Add a slide first.')),
-        );
-      }
-      return;
-    }
-
-    _editorState.setLoading(true);
-
-    try {
-      String exportedPath;
-      switch (format) {
-        case ExportFormat.pptx:
-          exportedPath = await presentationState.exportToPPT(fileName);
-          break;
-        case ExportFormat.html:
-          exportedPath = await presentationState.exportToHtml(fileName);
-          break;
-        case ExportFormat.pdf:
-          exportedPath = await presentationState.exportToPdf(fileName);
-          break;
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Exported successfully to: $exportedPath'),
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export error: ${e.toString()}')),
-        );
-      }
-    } finally {
-      _editorState.setLoading(false);
-    }
-  }
+  Future<void> _showCollaboration() => showDialog<void>(
+        context: context,
+        builder: (_) => const CollaborationPanel(),
+      );
 
   // ---- Template Gallery ----
 
@@ -188,7 +58,7 @@ class _EditorShellState extends State<EditorShell> {
     if (templates.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No templates available.')),
+          SnackBar(content: Text(context.l10n.noTemplates)),
         );
       }
       return;
@@ -201,7 +71,7 @@ class _EditorShellState extends State<EditorShell> {
         final screenWidth = MediaQuery.of(context).size.width;
         final dialogWidth = screenWidth * 0.85;
         return AlertDialog(
-          title: const Text('Choose a Template'),
+          title: Text(context.l10n.chooseTemplate),
           content: SizedBox(
             width: dialogWidth > 600 ? 600 : dialogWidth,
             height: 450,
@@ -225,7 +95,7 @@ class _EditorShellState extends State<EditorShell> {
                         _editorState.applyTemplate(template, context);
                         Navigator.pop(context);
                       },
-                      child: const Text('Use'),
+                      child: Text(context.l10n.useTemplate),
                     ),
                     onTap: () => _previewTemplate(template),
                   ),
@@ -236,7 +106,7 @@ class _EditorShellState extends State<EditorShell> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
+              child: Text(context.l10n.close),
             ),
           ],
         );
@@ -259,13 +129,15 @@ class _EditorShellState extends State<EditorShell> {
                 Text(template.description,
                     style: Theme.of(context).textTheme.bodyMedium),
                 const SizedBox(height: 12),
-                const Text('HTML Preview:',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                Text(context.l10n.htmlPreview,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13)),
                 const SizedBox(height: 6),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: SelectableText(
@@ -287,14 +159,14 @@ class _EditorShellState extends State<EditorShell> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: Text(context.l10n.close),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
               _editorState.applyTemplate(template, context);
             },
-            child: const Text('Use This Template'),
+            child: Text(context.l10n.useThisTemplate),
           ),
         ],
       ),
@@ -310,13 +182,12 @@ class _EditorShellState extends State<EditorShell> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Clear All Slides'),
-        content: Text(
-            'Are you sure you want to delete all ${state.slides.length} slides? This action cannot be undone.'),
+        title: Text(context.l10n.clearAllSlides),
+        content: Text(context.l10n.clearAllSlidesMessage(state.slides.length)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.cancel),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
@@ -326,16 +197,16 @@ class _EditorShellState extends State<EditorShell> {
               Navigator.pop(context);
               messenger.showSnackBar(
                 SnackBar(
-                  content: const Text('Deleted all slides'),
+                  content: Text(context.l10n.deletedAllSlides),
                   action: SnackBarAction(
-                    label: 'Undo',
+                    label: context.l10n.undoAction,
                     onPressed: () => state.undo(),
                   ),
                   duration: const Duration(seconds: 4),
                 ),
               );
             },
-            child: const Text('Clear All'),
+            child: Text(context.l10n.clearAllSlides),
           ),
         ],
       ),
@@ -349,37 +220,42 @@ class _EditorShellState extends State<EditorShell> {
 
     return ChangeNotifierProvider.value(
       value: _editorState,
-      child: Focus(
-        autofocus: true,
-        child: CallbackShortcuts(
-          bindings: {
-            const SingleActivator(LogicalKeyboardKey.enter, control: true):
-                () => _editorState.addOrUpdateSlide(context),
-            const SingleActivator(LogicalKeyboardKey.keyE, control: true):
-                () => _showExportDialog(),
-            const SingleActivator(LogicalKeyboardKey.keyS, control: true):
-                () => _showExportDialog(),
-            const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
-                () => presentationState.undo(),
-            const SingleActivator(LogicalKeyboardKey.keyY, control: true):
-                () => presentationState.redo(),
-          },
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.enter, control: true): () =>
+              _editorState.addOrUpdateSlide(context),
+          const SingleActivator(LogicalKeyboardKey.keyE, control: true): () =>
+              _showExportDialog(),
+          const SingleActivator(LogicalKeyboardKey.keyE,
+              control: true, shift: true): () => _showExportDialog(),
+          const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
+              _showExportDialog(),
+          const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () =>
+              presentationState.undo(),
+          const SingleActivator(LogicalKeyboardKey.keyY, control: true): () =>
+              presentationState.redo(),
+        },
+        // Keep the focusable node inside CallbackShortcuts so its key-event
+        // handler is guaranteed to sit on the active focus path. This mirrors
+        // the working shortcut structure used by the presentation screen.
+        child: Focus(
+          autofocus: true,
           child: _buildLayout(context, presentationState, theme),
         ),
       ),
     );
   }
 
-  Widget _buildLayout(
-      BuildContext context, PresentationState presentationState, ThemeData theme) {
+  Widget _buildLayout(BuildContext context, PresentationState presentationState,
+      ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.all(8.0),
+      padding: const EdgeInsets.all(4.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Left panel: Slide thumbnails (15% width)
+          // Left panel: Slide thumbnails (12% width)
           SizedBox(
-            width: 200,
+            width: 150,
             child: SlideListPanel(
               onAddSlide: () {
                 _editorState.clearEditor();
@@ -388,7 +264,7 @@ class _EditorShellState extends State<EditorShell> {
             ),
           ),
 
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
 
           // Center panel: HTML editor + preview (flex: 1)
           Expanded(
@@ -398,10 +274,10 @@ class _EditorShellState extends State<EditorShell> {
                 // Top action bar (Templates, Export, Present, Clear)
                 _buildTopBar(context, presentationState, theme),
 
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
 
                 // Main editor area
-                Expanded(
+                const Expanded(
                   child: HtmlEditorPanel(),
                 ),
               ],
@@ -412,91 +288,110 @@ class _EditorShellState extends State<EditorShell> {
     );
   }
 
-  Widget _buildTopBar(
-      BuildContext context, PresentationState presentationState, ThemeData theme) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        child: Row(
-          children: [
-            // Templates
-            _actionButton(
-              context,
-              icon: Icons.palette_outlined,
-              label: 'Templates',
-              onPressed: _showTemplateGallery,
-            ),
-
-            const SizedBox(width: 4),
-
-            // Export
-            _actionButton(
-              context,
-              icon: Icons.download,
-              label: 'Export',
-              onPressed: _showExportDialog,
-            ),
-
-            const SizedBox(width: 4),
-
-            // Present
-            if (presentationState.slides.isNotEmpty)
-              FilledButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) =>
-                        PresentScreen(state: presentationState),
-                  ));
-                },
-                icon: const Icon(Icons.play_arrow, size: 16),
-                label: const Text('Present', style: TextStyle(fontSize: 12)),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                ),
-              ),
-
-            const Spacer(),
-
-            // Slide counter
-            Text(
-              '${presentationState.slides.length} slides',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-
-            const SizedBox(width: 8),
-
-            // Undo/Redo
-            IconButton(
-              icon: Icon(Icons.undo, size: 18,
-                  color: presentationState.canUndo
-                      ? theme.colorScheme.onSurface
-                      : theme.colorScheme.outline.withValues(alpha: 0.3)),
-              tooltip: 'Undo (Ctrl+Z)',
-              onPressed: presentationState.canUndo ? () => presentationState.undo() : null,
-              visualDensity: VisualDensity.compact,
-            ),
-            IconButton(
-              icon: Icon(Icons.redo, size: 18,
-                  color: presentationState.canRedo
-                      ? theme.colorScheme.onSurface
-                      : theme.colorScheme.outline.withValues(alpha: 0.3)),
-              tooltip: 'Redo (Ctrl+Y)',
-              onPressed: presentationState.canRedo ? () => presentationState.redo() : null,
-              visualDensity: VisualDensity.compact,
-            ),
-
-            // Clear all
-            if (presentationState.slides.isNotEmpty)
-              IconButton(
-                icon: const Icon(Icons.delete_sweep, size: 18, color: Colors.red),
-                tooltip: 'Clear All Slides',
-                onPressed: _confirmClearAll,
+  Widget _buildTopBar(BuildContext context, PresentationState presentationState,
+      ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(
+          bottom: BorderSide(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Templates
+          _actionButton(
+            context,
+            icon: Icons.palette_outlined,
+            label: context.l10n.templates,
+            onPressed: _showTemplateGallery,
+          ),
+          const SizedBox(width: 4),
+          // Export
+          _actionButton(
+            context,
+            icon: Icons.download,
+            label: context.l10n.export,
+            onPressed: _showExportDialog,
+          ),
+          const SizedBox(width: 4),
+          _actionButton(
+            context,
+            icon: Icons.people_outline,
+            label: context.l10n.collaboration,
+            onPressed: _showCollaboration,
+          ),
+          const SizedBox(width: 4),
+          // Present
+          if (presentationState.slides.isNotEmpty)
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => PresentScreen(state: presentationState),
+                ));
+              },
+              icon: const Icon(Icons.play_arrow, size: 14),
+              label: Text(context.l10n.present,
+                  style: const TextStyle(fontSize: 11)),
+              style: FilledButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 visualDensity: VisualDensity.compact,
               ),
-          ],
-        ),
+            ),
+          const Spacer(),
+          // Slide counter
+          Text(
+            context.l10n.slideCount(presentationState.slides.length),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.outline,
+              fontSize: 10,
+            ),
+          ),
+          const SizedBox(width: 4),
+          // Undo/Redo
+          IconButton(
+            icon: Icon(Icons.undo,
+                size: 16,
+                color: presentationState.canUndo
+                    ? theme.colorScheme.onSurface
+                    : theme.colorScheme.outline.withValues(alpha: 0.3)),
+            tooltip: 'Undo (Ctrl+Z)',
+            onPressed: presentationState.canUndo
+                ? () => presentationState.undo()
+                : null,
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          ),
+          IconButton(
+            icon: Icon(Icons.redo,
+                size: 16,
+                color: presentationState.canRedo
+                    ? theme.colorScheme.onSurface
+                    : theme.colorScheme.outline.withValues(alpha: 0.3)),
+            tooltip: 'Redo (Ctrl+Y)',
+            onPressed: presentationState.canRedo
+                ? () => presentationState.redo()
+                : null,
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          ),
+          // Clear all
+          if (presentationState.slides.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_sweep, size: 16, color: Colors.red),
+              tooltip: context.l10n.clearAllSlides,
+              onPressed: _confirmClearAll,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            ),
+        ],
       ),
     );
   }
@@ -518,5 +413,3 @@ class _EditorShellState extends State<EditorShell> {
     );
   }
 }
-
-enum ExportFormat { pptx, html, pdf }

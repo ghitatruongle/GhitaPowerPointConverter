@@ -20,11 +20,16 @@ class _HtmlEditorPanelState extends State<HtmlEditorPanel> {
     final editorState = Provider.of<EditorState>(context);
     final theme = Theme.of(context);
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+        ),
+        borderRadius: BorderRadius.circular(4),
+      ),
       child: Column(
         children: [
-          // Title + Notes bar
+          // Title + Notes bar (compact)
           _buildTitleBar(context, editorState, theme),
 
           const Divider(height: 1),
@@ -41,7 +46,7 @@ class _HtmlEditorPanelState extends State<HtmlEditorPanel> {
               children: [
                 // HTML editor
                 Expanded(
-                  flex: editorState.showPreview ? 1 : 3,
+                  flex: editorState.showPreview ? 3 : 1,
                   child: _buildHtmlEditor(context, editorState, theme),
                 ),
 
@@ -49,7 +54,7 @@ class _HtmlEditorPanelState extends State<HtmlEditorPanel> {
                 if (editorState.showPreview) ...[
                   VerticalDivider(width: 1, color: theme.dividerColor),
                   Expanded(
-                    flex: 1,
+                    flex: 2,
                     child: _buildLivePreview(context, editorState, theme),
                   ),
                 ],
@@ -63,7 +68,7 @@ class _HtmlEditorPanelState extends State<HtmlEditorPanel> {
             _buildNotesPanel(context, editorState, theme),
           ],
 
-          // Bottom action bar
+          // Bottom action bar (compact)
           const Divider(height: 1),
           _buildActionBar(context, editorState, theme),
         ],
@@ -74,7 +79,7 @@ class _HtmlEditorPanelState extends State<HtmlEditorPanel> {
   Widget _buildTitleBar(
       BuildContext context, EditorState editorState, ThemeData theme) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
       child: Row(
         children: [
@@ -113,7 +118,7 @@ class _HtmlEditorPanelState extends State<HtmlEditorPanel> {
                 hintText: 'Slide title...',
                 border: InputBorder.none,
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                contentPadding: const EdgeInsets.symmetric(vertical: 2),
                 prefixIcon: Padding(
                   padding: const EdgeInsets.only(right: 4),
                   child: Icon(Icons.title, size: 16, color: theme.colorScheme.outline),
@@ -208,7 +213,7 @@ class _HtmlEditorPanelState extends State<HtmlEditorPanel> {
               hintStyle: TextStyle(
                 color: theme.colorScheme.outline.withValues(alpha: 0.5),
                 fontFamily: 'Consolas',
-                fontFamilyFallback: ['monospace'],
+                fontFamilyFallback: const ['monospace'],
                 fontSize: 13,
               ),
               border: InputBorder.none,
@@ -303,8 +308,8 @@ class _HtmlEditorPanelState extends State<HtmlEditorPanel> {
   Widget _buildNotesPanel(
       BuildContext context, EditorState editorState, ThemeData theme) {
     return Container(
-      height: 100,
-      padding: const EdgeInsets.all(8),
+      height: 80,
+      padding: const EdgeInsets.all(6),
       color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.15),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -355,7 +360,7 @@ class _HtmlEditorPanelState extends State<HtmlEditorPanel> {
     final presentationState = Provider.of<PresentationState>(context);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.15),
       ),
@@ -366,13 +371,14 @@ class _HtmlEditorPanelState extends State<HtmlEditorPanel> {
             onPressed: editorState.isLoading
                 ? null
                 : () => editorState.addOrUpdateSlide(context),
-            icon: Icon(editorState.isEditing ? Icons.save : Icons.add, size: 16),
+            icon: Icon(editorState.isEditing ? Icons.save : Icons.add, size: 14),
             label: Text(
               editorState.isEditing ? 'Update' : 'Add Slide',
-              style: const TextStyle(fontSize: 12),
+              style: const TextStyle(fontSize: 11),
             ),
             style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              visualDensity: VisualDensity.compact,
             ),
           ),
 
@@ -383,7 +389,8 @@ class _HtmlEditorPanelState extends State<HtmlEditorPanel> {
               icon: const Icon(Icons.close, size: 14),
               label: const Text('Cancel', style: TextStyle(fontSize: 11)),
               style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                visualDensity: VisualDensity.compact,
               ),
             ),
           ],
@@ -405,10 +412,11 @@ class _HtmlEditorPanelState extends State<HtmlEditorPanel> {
                   ),
                 );
               },
-              icon: const Icon(Icons.play_arrow, size: 16),
-              label: const Text('Present', style: TextStyle(fontSize: 12)),
+              icon: const Icon(Icons.play_arrow, size: 14),
+              label: const Text('Present', style: TextStyle(fontSize: 11)),
               style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                visualDensity: VisualDensity.compact,
               ),
             ),
         ],

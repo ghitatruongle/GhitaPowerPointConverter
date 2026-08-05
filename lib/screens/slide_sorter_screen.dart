@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/presentation_state.dart';
-import '../models/slide.dart';
 import '../screens/widgets/slide_preview.dart';
 
 /// Slide Sorter — grid view of all slides, similar to PowerPoint's Slide Sorter.
@@ -264,7 +263,7 @@ class _SlideSorterCard extends StatelessWidget {
                 ),
                 child: Text(
                   '${index + 1}',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: Colors.white,

@@ -10,14 +10,20 @@ class SlidePreview extends StatefulWidget {
 
   const SlidePreview({super.key, required this.title, required this.html});
 
-  static String wrapSlideHtml(String title, String html) {
-    final cleaned = html
-        .replaceAll(RegExp(r'data-bg-color="[^"]*"', caseSensitive: false), '')
-        .replaceAll(RegExp(r"data-bg-color='[^']*'", caseSensitive: false), '');
+  /// Extracts the background color from raw HTML before cleaning data attributes.
+  static String _extractBgColor(String html) {
     final bgMatch = RegExp(r"""data-bg-color=["']([^"']+)["']""",
             caseSensitive: false)
         .firstMatch(html);
-    final bg = bgMatch?.group(1) ?? '#1a1a2e';
+    return bgMatch?.group(1) ?? '#1a1a2e';
+  }
+
+  static String wrapSlideHtml(String title, String html) {
+    // v1.2.0: Extract bg color FIRST, then clean data attributes
+    final bg = _extractBgColor(html);
+    final cleaned = html
+        .replaceAll(RegExp(r'data-bg-color="[^"]*"', caseSensitive: false), '')
+        .replaceAll(RegExp(r"data-bg-color='[^']*'", caseSensitive: false), '');
     return '''
 <!DOCTYPE html>
 <html><head><meta charset="UTF-8">
@@ -49,9 +55,8 @@ class SlidePreview extends StatefulWidget {
 
 class _SlidePreviewState extends State<SlidePreview> {
   final _controller = WebviewController();
-  bool _ready = false;
   bool _failed = false;
-  bool _showWebView = false; // Start with text preview, try WebView2 in background
+  bool _showWebView = false;
   String? _pendingHtml;
 
   @override
@@ -127,11 +132,15 @@ class _SlidePreviewState extends State<SlidePreview> {
   }
 
   Widget _buildTextPreview(BuildContext context) {
-    final bgMatch = RegExp(r"""data-bg-color=["']([^"']+)["']""",
-            caseSensitive: false)
-        .firstMatch(widget.html);
-    final bgHex = bgMatch?.group(1) ?? '#1a1a2e';
-    final bgColor = Color(int.parse(bgHex.replaceFirst('#', '0xFF')));
+    // v1.2.0: Use shared extraction method, safe color parsing
+    final bgHex = SlidePreview._extractBgColor(widget.html);
+    Color bgColor;
+    try {
+      final hexValue = bgHex.replaceFirst('#', '');
+      bgColor = Color(int.parse('FF$hexValue', radix: 16));
+    } catch (_) {
+      bgColor = const Color(0xFF1A1A2E); // Fallback dark blue
+    }
 
     return Container(
       color: bgColor,

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import '../models/export_options.dart';
 import 'ppt_generator.dart';
 import 'html_image_loader.dart';
 
@@ -29,13 +30,11 @@ class PdfExportService {
     if (_themeLoaded) return _cachedTheme;
     _themeLoaded = true;
 
-    final fontsDir =
-        Platform.environment['WINDIR'] ?? r'C:\Windows';
+    final fontsDir = Platform.environment['WINDIR'] ?? r'C:\Windows';
     for (final family in _fontCandidates) {
       try {
-        final files = family
-            .map((name) => File('$fontsDir\\Fonts\\$name'))
-            .toList();
+        final files =
+            family.map((name) => File('$fontsDir\\Fonts\\$name')).toList();
         if (!files[0].existsSync()) continue;
 
         Future<pw.Font> loadFont(File f, File fallback) async {
@@ -66,6 +65,10 @@ class PdfExportService {
     List<Map<String, dynamic>> slides,
     String outputPath, {
     bool widescreen = true,
+    ExportAspectRatio? aspectRatio,
+    bool includeNotes = false,
+    bool includeBackgrounds = true,
+    int? imageMaxWidth,
   }) async {
     if (slides.isEmpty) {
       throw Exception('No slides to export.');
@@ -73,23 +76,32 @@ class PdfExportService {
 
     final theme = await loadSystemTheme();
     final doc = pw.Document(theme: theme);
-    // 16:9 = 13.333 x 7.5 inch, 4:3 = 10 x 7.5 inch (PowerPoint defaults).
-    final pageFormat = widescreen
-        ? const PdfPageFormat(13.333 * PdfPageFormat.inch, 7.5 * PdfPageFormat.inch)
-        : const PdfPageFormat(10 * PdfPageFormat.inch, 7.5 * PdfPageFormat.inch);
+    final selectedRatio = aspectRatio ??
+        (widescreen
+            ? ExportAspectRatio.widescreen16x9
+            : ExportAspectRatio.standard4x3);
+    final pageFormat = PdfPageFormat(
+      selectedRatio.widthInches * PdfPageFormat.inch,
+      selectedRatio.heightInches * PdfPageFormat.inch,
+    );
 
     for (int i = 0; i < slides.length; i++) {
       final slide = slides[i];
       final title = (slide['title'] ?? 'Slide ${i + 1}').toString();
       final rawHtml = (slide['htmlContent'] ?? '').toString();
       final blocks = PPTGenerator.parseHtmlContentFull(rawHtml);
-      final bgColor = _extractBgColor(rawHtml);
+      final bgColor = includeBackgrounds ? _extractBgColor(slide) : null;
+      final notes = includeNotes ? _extractNotes(slide, rawHtml) : '';
 
       doc.addPage(
         pw.Page(
           pageFormat: pageFormat,
           margin: pw.EdgeInsets.zero,
           build: (context) {
+            // Keep presenter notes visible even when a slide has an image.
+            // The prior fixed 260 pt image could consume the last available
+            // page height and silently push the notes below the page.
+            final maxImageHeight = notes.isNotEmpty ? 150.0 : 260.0;
             return pw.Container(
               color: bgColor,
               width: double.infinity,
@@ -108,7 +120,48 @@ class PdfExportService {
                     ),
                   ),
                   pw.SizedBox(height: 14),
-                  ..._buildBlocks(blocks, bgColor),
+                  // Reserve the notes area before laying out the visible
+                  // slide body.  A bounded, clipped body is preferable to a
+                  // PDF page whose title/notes are pushed outside its bounds.
+                  pw.Expanded(
+                    child: pw.ClipRect(
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: _buildBlocks(
+                          blocks,
+                          bgColor,
+                          imageMaxWidth: imageMaxWidth,
+                          maxImageHeight: maxImageHeight,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (notes.isNotEmpty) ...[
+                    pw.SizedBox(height: 8),
+                    pw.Container(
+                      width: double.infinity,
+                      padding: const pw.EdgeInsets.all(8),
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border.all(color: PdfColors.grey500),
+                        color: PdfColors.grey100,
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Speaker notes',
+                            style: pw.TextStyle(
+                              fontSize: 9,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                          pw.SizedBox(height: 3),
+                          pw.Text(notes,
+                              style: const pw.TextStyle(fontSize: 8)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             );
@@ -124,7 +177,11 @@ class PdfExportService {
   }
 
   List<pw.Widget> _buildBlocks(
-      List<Map<String, dynamic>> blocks, PdfColor? bgColor) {
+    List<Map<String, dynamic>> blocks,
+    PdfColor? bgColor, {
+    int? imageMaxWidth,
+    double maxImageHeight = 260,
+  }) {
     final widgets = <pw.Widget>[];
     final defaultColor = bgColor != null ? _contrastColor(bgColor) : null;
 
@@ -132,38 +189,37 @@ class PdfExportService {
       final type = block['type'] as String;
       switch (type) {
         case 'text':
-          for (final para
-              in (block['paragraphs'] as List).cast<Map<String, String>>()) {
-            final text = para['text'] ?? '';
-            if (text.isEmpty) {
-              if (para['isBreak'] == 'true') {
-                widgets.add(pw.SizedBox(height: 8));
-              }
+          final paragraphs =
+              (block['paragraphs'] as List).cast<Map<String, String>>();
+          for (final runs in _groupRuns(paragraphs, 'paragraphStart')) {
+            if (runs.every((run) =>
+                (run['text'] ?? '').isEmpty && run['isBreak'] != 'true')) {
               continue;
             }
             widgets.add(pw.Padding(
               padding: const pw.EdgeInsets.only(bottom: 6),
-              child: pw.Text(text, style: _runStyle(para, 16, defaultColor)),
+              child: _richText(runs, 16, defaultColor),
             ));
           }
           break;
         case 'list':
           final ordered = block['ordered'] == true;
           final items = (block['items'] as List).cast<Map<String, String>>();
-          for (int i = 0; i < items.length; i++) {
-            final item = items[i];
-            final text = item['text'] ?? '';
-            if (text.isEmpty) continue;
+          final itemGroups = _groupRuns(items, 'itemStart');
+          for (int i = 0; i < itemGroups.length; i++) {
+            final itemRuns = itemGroups[i];
+            if (itemRuns.every((run) => (run['text'] ?? '').isEmpty)) {
+              continue;
+            }
             widgets.add(pw.Padding(
               padding: const pw.EdgeInsets.only(left: 16, bottom: 4),
               child: pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
                   pw.Text(ordered ? '${i + 1}. ' : '\u2022 ',
-                      style: _runStyle(item, 15, defaultColor)),
+                      style: _runStyle(itemRuns.first, 15, defaultColor)),
                   pw.Expanded(
-                    child:
-                        pw.Text(text, style: _runStyle(item, 15, defaultColor)),
+                    child: _richText(itemRuns, 15, defaultColor),
                   ),
                 ],
               ),
@@ -193,21 +249,20 @@ class PdfExportService {
                   fontSize: 12,
                   fontWeight: pw.FontWeight.bold,
                   color: defaultColor),
-              border: pw.TableBorder.all(
-                  color: PdfColors.grey600, width: 0.5),
+              border: pw.TableBorder.all(color: PdfColors.grey600, width: 0.5),
             ),
           ));
           break;
         case 'image':
           final src = (block['src'] ?? '').toString();
-          final loaded = HtmlImageLoader.load(src);
+          final loaded = HtmlImageLoader.load(src, maxWidth: imageMaxWidth);
           if (loaded != null) {
             widgets.add(pw.Padding(
               padding: const pw.EdgeInsets.symmetric(vertical: 8),
               child: pw.Center(
                 child: pw.Image(
                   pw.MemoryImage(loaded.bytes),
-                  height: 260,
+                  height: maxImageHeight,
                   fit: pw.BoxFit.contain,
                 ),
               ),
@@ -217,6 +272,41 @@ class PdfExportService {
       }
     }
     return widgets;
+  }
+
+  pw.RichText _richText(
+    List<Map<String, String>> runs,
+    double defaultSize,
+    PdfColor? defaultColor,
+  ) {
+    return pw.RichText(
+      text: pw.TextSpan(
+        children: [
+          for (final run in runs)
+            pw.TextSpan(
+              text: run['isBreak'] == 'true' ? '\n' : (run['text'] ?? ''),
+              style: _runStyle(run, defaultSize, defaultColor),
+            ),
+        ],
+      ),
+    );
+  }
+
+  List<List<Map<String, String>>> _groupRuns(
+    List<Map<String, String>> runs,
+    String startMarker,
+  ) {
+    final groups = <List<Map<String, String>>>[];
+    var current = <Map<String, String>>[];
+    for (final run in runs) {
+      if (run[startMarker] == 'true' && current.isNotEmpty) {
+        groups.add(current);
+        current = <Map<String, String>>[];
+      }
+      current.add(run);
+    }
+    if (current.isNotEmpty) groups.add(current);
+    return groups;
   }
 
   pw.TextStyle _runStyle(
@@ -245,12 +335,20 @@ class PdfExportService {
     );
   }
 
-  PdfColor? _extractBgColor(String html) {
-    final match = RegExp(r"""data-bg-color=["']([^"']+)["']""",
-            caseSensitive: false)
-        .firstMatch(html);
-    if (match == null) return null;
-    final hex = PPTGenerator.cssColorToHex(match.group(1)!);
+  String _extractNotes(Map<String, dynamic> slide, String html) {
+    final explicit = (slide['notes'] ?? '').toString().trim();
+    return explicit.isNotEmpty ? explicit : PPTGenerator.extractNotes(html);
+  }
+
+  PdfColor? _extractBgColor(Map<String, dynamic> slide) {
+    final typed =
+        PPTGenerator.cssColorToHex((slide['bgColor'] ?? '').toString());
+    final html = (slide['htmlContent'] ?? '').toString();
+    final match =
+        RegExp(r"""data-bg-color=["']([^"']+)["']""", caseSensitive: false)
+            .firstMatch(html);
+    final hex = typed ??
+        (match == null ? null : PPTGenerator.cssColorToHex(match.group(1)!));
     if (hex == null) return null;
     try {
       return PdfColor.fromHex(hex);

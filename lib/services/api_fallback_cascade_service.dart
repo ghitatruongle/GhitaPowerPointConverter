@@ -2,18 +2,6 @@ import 'dart:async';
 import 'package:http/http.dart' as http;
 import '../providers/ai_provider_manager.dart';
 
-class PingResult {
-  final bool isSuccess;
-  final int latencyMs;
-  final String? errorMessage;
-
-  PingResult({
-    required this.isSuccess,
-    required this.latencyMs,
-    this.errorMessage,
-  });
-}
-
 /// Service managing API latency testing, Key Rotation, and Fallback Cascade Execution.
 class APIFallbackCascadeService {
   /// Measures ping latency (ms) for a given provider configuration.

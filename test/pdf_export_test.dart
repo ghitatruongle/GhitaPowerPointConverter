@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ghita_ppt_converter/models/export_options.dart';
 import 'package:ghita_ppt_converter/services/pdf_export_service.dart';
 
 const String kOnePixelPngBase64 =
@@ -70,6 +71,33 @@ void main() {
       final exported =
           await service.exportToPdf(slides, path, widescreen: false);
       expect(File(exported).existsSync(), isTrue);
+      File(exported).deleteSync();
+    });
+
+    test('supports square and portrait advanced dimensions with notes',
+        () async {
+      final path = '$tmpDir/test_export_portrait.pdf';
+      final exported = await service.exportToPdf(
+        [
+          {
+            'title': 'Portrait',
+            'notes': 'Speaker note',
+            'htmlContent': '<div data-bg-color="#123456"><p>Content</p></div>',
+          }
+        ],
+        path,
+        aspectRatio: ExportAspectRatio.portrait9x16,
+        includeNotes: true,
+        includeBackgrounds: false,
+        imageMaxWidth: ExportQuality.low.imageMaxWidth,
+      );
+      final content = latin1.decode(File(exported).readAsBytesSync());
+
+      expect(
+        RegExp(r'/MediaBox\s*\[\s*0\s+0\s+405(?:\.0+)?\s+720')
+            .hasMatch(content),
+        isTrue,
+      );
       File(exported).deleteSync();
     });
 

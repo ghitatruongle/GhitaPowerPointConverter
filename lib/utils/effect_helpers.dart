@@ -40,7 +40,6 @@ class EffectHelpers {
       case SlideEffect.disappear: return 'Disappear';
       case SlideEffect.arc: return 'Arc';
       case SlideEffect.customPath: return 'Custom Path';
-      default: return 'None';
     }
   }
 }

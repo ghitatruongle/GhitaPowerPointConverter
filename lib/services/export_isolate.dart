@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:isolate';
+import '../models/export_options.dart';
 import '../models/slide.dart';
 import 'html_export_service.dart';
 import 'pdf_export_service.dart';
@@ -25,6 +26,10 @@ Future<String> runPptExportInIsolate(
   String outputPath, {
   SlideEffect effect = SlideEffect.none,
   bool widescreen = true,
+  ExportAspectRatio? aspectRatio,
+  bool includeNotes = true,
+  bool includeBackgrounds = true,
+  int? imageMaxWidth,
   Duration? autoAdvance,
 }) async {
   final result = await ExportIsolateService.instance._runJob(<String, dynamic>{
@@ -33,6 +38,10 @@ Future<String> runPptExportInIsolate(
     'outputPath': outputPath,
     'effect': effect.name,
     'widescreen': widescreen,
+    'aspectRatio': aspectRatio?.name,
+    'includeNotes': includeNotes,
+    'includeBackgrounds': includeBackgrounds,
+    'imageMaxWidth': imageMaxWidth,
     'autoAdvanceMs': autoAdvance?.inMilliseconds ?? 0,
   });
   if (result['ok'] == true) return result['path'] as String;
@@ -45,6 +54,10 @@ Future<String> runPdfExportInIsolate(
   List<Map<String, dynamic>> slides,
   String outputPath, {
   bool widescreen = true,
+  ExportAspectRatio? aspectRatio,
+  bool includeNotes = false,
+  bool includeBackgrounds = true,
+  int? imageMaxWidth,
 }) async {
   final result = await ExportIsolateService.instance._runJob(<String, dynamic>{
     'type': 'pdf',
@@ -52,6 +65,10 @@ Future<String> runPdfExportInIsolate(
     'outputPath': outputPath,
     'effect': 'none',
     'widescreen': widescreen,
+    'aspectRatio': aspectRatio?.name,
+    'includeNotes': includeNotes,
+    'includeBackgrounds': includeBackgrounds,
+    'imageMaxWidth': imageMaxWidth,
     'autoAdvanceMs': 0,
   });
   if (result['ok'] == true) return result['path'] as String;
@@ -62,14 +79,22 @@ Future<String> runPdfExportInIsolate(
 /// Returns the output file path.
 Future<String> runHtmlExportInIsolate(
   List<Map<String, dynamic>> slides,
-  String outputPath,
-) async {
+  String outputPath, {
+  ExportAspectRatio? aspectRatio,
+  bool includeNotes = false,
+  bool includeBackgrounds = true,
+  int? imageMaxWidth,
+}) async {
   final result = await ExportIsolateService.instance._runJob(<String, dynamic>{
     'type': 'html',
     'slides': slides,
     'outputPath': outputPath,
     'effect': 'none',
     'widescreen': true,
+    'aspectRatio': aspectRatio?.name,
+    'includeNotes': includeNotes,
+    'includeBackgrounds': includeBackgrounds,
+    'imageMaxWidth': imageMaxWidth,
     'autoAdvanceMs': 0,
   });
   if (result['ok'] == true) return result['path'] as String;
@@ -144,8 +169,7 @@ class ExportIsolateService {
       final reply = ReceivePort();
       try {
         workerPort.send(<String, dynamic>{...job, 'replyPort': reply.sendPort});
-        final message =
-            await reply.first.timeout(const Duration(minutes: 2));
+        final message = await reply.first.timeout(const Duration(minutes: 2));
         return Map<String, dynamic>.from(message as Map);
       } on TimeoutException {
         // The worker likely died mid-job — drop it and let the next call
@@ -187,6 +211,13 @@ Future<String> _doExport(_ExportJob job) async {
   final slides = (job['slides'] as List).cast<Map<String, dynamic>>();
   final outputPath = job['outputPath'] as String;
   final widescreen = job['widescreen'] as bool? ?? true;
+  final aspectRatioName = job['aspectRatio'] as String?;
+  final aspectRatio = aspectRatioName == null
+      ? null
+      : ExportAspectRatio.values.byName(aspectRatioName);
+  final includeNotes = job['includeNotes'] as bool? ?? false;
+  final includeBackgrounds = job['includeBackgrounds'] as bool? ?? true;
+  final imageMaxWidth = job['imageMaxWidth'] as int?;
   final effect = SlideEffect.values.byName(job['effect'] as String? ?? 'none');
   final autoAdvanceMs = job['autoAdvanceMs'] as int? ?? 0;
 
@@ -197,16 +228,35 @@ Future<String> _doExport(_ExportJob job) async {
         outputPath,
         effect: effect,
         widescreen: widescreen,
+        aspectRatio: aspectRatio,
+        includeNotes: includeNotes,
+        includeBackgrounds: includeBackgrounds,
+        imageMaxWidth: imageMaxWidth,
         autoAdvance:
             autoAdvanceMs > 0 ? Duration(milliseconds: autoAdvanceMs) : null,
       );
       return file.path;
     case 'pdf':
       final svc = PdfExportService();
-      return await svc.exportToPdf(slides, outputPath, widescreen: widescreen);
+      return await svc.exportToPdf(
+        slides,
+        outputPath,
+        widescreen: widescreen,
+        aspectRatio: aspectRatio,
+        includeNotes: includeNotes,
+        includeBackgrounds: includeBackgrounds,
+        imageMaxWidth: imageMaxWidth,
+      );
     case 'html':
       final svc = HtmlExportService();
-      return await svc.exportToHtmlPath(slides, outputPath);
+      return await svc.exportToHtmlPath(
+        slides,
+        outputPath,
+        aspectRatio: aspectRatio ?? ExportAspectRatio.widescreen16x9,
+        includeNotes: includeNotes,
+        includeBackgrounds: includeBackgrounds,
+        imageMaxWidth: imageMaxWidth,
+      );
     default:
       throw Exception('Unknown export type: $type');
   }

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../providers/presentation_state.dart';
 import '../../models/slide_template.dart';
 import '../../utils/effect_helpers.dart';
+import '../../utils/error_mapper.dart';
 
 /// Centralized editor state for the PowerPoint-style editor.
 ///
@@ -213,9 +214,7 @@ class EditorState with ChangeNotifier {
       clearEditor();
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
-        );
+        ErrorMapper.showErrorSnackBar(context, e);
       }
     } finally {
       _isLoading = false;

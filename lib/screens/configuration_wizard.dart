@@ -1,11 +1,235 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/enhanced_ai_provider_config.dart';
-import '../providers/enhanced_ai_provider_manager.dart';
+import '../providers/ai_provider_manager.dart';
 
-// Step 1: Provider Type Selection Screen
+// =============================================================================
+// Configuration Wizard — 4-step AI provider setup
+// v1.2.0: Uses unified AIProviderManager, all bugs fixed
+// =============================================================================
+
+class ConfigurationWizard extends StatefulWidget {
+  const ConfigurationWizard({super.key});
+
+  @override
+  State<ConfigurationWizard> createState() => _ConfigurationWizardState();
+}
+
+class _ConfigurationWizardState extends State<ConfigurationWizard> {
+  int _currentStep = 0;
+  AIProviderConfig? _currentProvider;
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  List<Widget> _buildSteps() {
+    // Rebuild steps with current provider data only when needed
+    return [
+      _ProviderTypeStep(onProviderCreated: _updateCurrentProvider),
+      _APIKeyStep(
+        providerConfig: _currentProvider ?? AIProviderConfig.defaultProvider(),
+        onConfigUpdated: _updateCurrentProvider,
+      ),
+      _ModelSelectionStep(
+        providerConfig: _currentProvider ?? AIProviderConfig.defaultProvider(),
+        onConfigUpdated: _updateCurrentProvider,
+      ),
+      _SummaryStep(
+        providerConfig: _currentProvider ?? AIProviderConfig.defaultProvider(),
+        onConfigurationComplete: _completeConfiguration,
+      ),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final steps = _buildSteps();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Cấu hình Nhà cung cấp AI'),
+        backgroundColor: theme.colorScheme.surface,
+        elevation: 0,
+      ),
+      body: Column(
+        children: [
+          // Progress indicator
+          LinearProgressIndicator(
+            value: (_currentStep + 1) / steps.length,
+            backgroundColor: theme.colorScheme.surfaceContainerHighest,
+            valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+          ),
+
+          // Step indicator
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            child: Row(
+              children: List.generate(steps.length, (index) {
+                final isActive = index == _currentStep;
+                final isCompleted = index < _currentStep;
+                return Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isCompleted
+                              ? theme.colorScheme.primary
+                              : isActive
+                                  ? theme.colorScheme.primaryContainer
+                                  : theme.colorScheme.surfaceContainerHighest,
+                        ),
+                        child: Center(
+                          child: isCompleted
+                              ? Icon(Icons.check, size: 16, color: theme.colorScheme.onPrimary)
+                              : Text(
+                                  '${index + 1}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: isActive
+                                        ? theme.colorScheme.onPrimaryContainer
+                                        : theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                        ),
+                      ),
+                      if (index < steps.length - 1) ...[
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Container(
+                            height: 2,
+                            color: isCompleted
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.surfaceContainerHighest,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }),
+            ),
+          ),
+
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: steps[_currentStep],
+            ),
+          ),
+
+          // Navigation buttons — v1.2.0: validation-aware
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (_currentStep > 0)
+                  OutlinedButton.icon(
+                    onPressed: () => setState(() => _currentStep--),
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Quay lại'),
+                  )
+                else
+                  const SizedBox(width: 120),
+
+                ElevatedButton.icon(
+                  onPressed: _canAdvance()
+                      ? () {
+                          if (_currentStep < steps.length - 1) {
+                            setState(() => _currentStep++);
+                          } else {
+                            _completeConfiguration();
+                          }
+                        }
+                      : null, // Disable if can't advance
+                  icon: Icon(_currentStep < steps.length - 1
+                      ? Icons.arrow_forward
+                      : Icons.check_circle),
+                  label: Text(_currentStep < steps.length - 1
+                      ? 'Tiếp theo'
+                      : 'Hoàn thành'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// v1.2.0: Check if current step is valid before allowing advance
+  bool _canAdvance() {
+    switch (_currentStep) {
+      case 0:
+        return _currentProvider != null &&
+            _currentProvider!.name.isNotEmpty &&
+            _currentProvider!.baseUrl.isNotEmpty;
+      case 1:
+        return true; // API key is optional for local providers
+      case 2:
+        return _currentProvider?.selectedModel.isNotEmpty ?? false;
+      case 3:
+        return _currentProvider != null;
+      default:
+        return false;
+    }
+  }
+
+  void _updateCurrentProvider(AIProviderConfig config) {
+    setState(() {
+      _currentProvider = config;
+    });
+  }
+
+  Future<void> _completeConfiguration() async {
+    if (_currentProvider == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng hoàn thành tất cả các bước trước khi tiếp tục.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Save to unified AIProviderManager
+    final manager = Provider.of<AIProviderManager>(context, listen: false);
+    manager.addProvider(_currentProvider!);
+
+    // v1.2.0 fix: Select the new provider before saving API key
+    // (addProvider only auto-selects if _selectedProvider is null,
+    //  but root provider always has a default selected)
+    manager.selectProvider(_currentProvider!);
+
+    // Save API key to secure storage if provided
+    if (_currentProvider!.apiKey.isNotEmpty) {
+      await manager.saveApiKeyForSelected(_currentProvider!.apiKey);
+    }
+
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Đã cấu hình nhà cung cấp AI thành công: ${_currentProvider!.name}'),
+        backgroundColor: Colors.green,
+      ),
+    );
+
+    if (mounted) Navigator.pop(context);
+  }
+}
+
+// =============================================================================
+// Step 1: Provider Type Selection
+// =============================================================================
+
 class _ProviderTypeStep extends StatefulWidget {
-  final Function(EnhancedAIProviderConfig) onProviderCreated;
+  final Function(AIProviderConfig) onProviderCreated;
 
   const _ProviderTypeStep({required this.onProviderCreated});
 
@@ -15,7 +239,8 @@ class _ProviderTypeStep extends StatefulWidget {
 
 class _ProviderTypeStepState extends State<_ProviderTypeStep> {
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _baseUrlController = TextEditingController(text: 'https://api.openai.com');
+  final TextEditingController _baseUrlController =
+      TextEditingController(text: 'https://api.openai.com');
   String _selectedProviderType = 'openai';
 
   final List<Map<String, dynamic>> _providerTypes = [
@@ -25,6 +250,7 @@ class _ProviderTypeStepState extends State<_ProviderTypeStep> {
       'baseUrl': 'https://api.openai.com',
       'icon': Icons.smart_toy,
       'color': Colors.green,
+      'formatType': 'openai',
     },
     {
       'id': 'anthropic',
@@ -32,6 +258,7 @@ class _ProviderTypeStepState extends State<_ProviderTypeStep> {
       'baseUrl': 'https://api.anthropic.com',
       'icon': Icons.psychology,
       'color': Colors.purple,
+      'formatType': 'anthropic',
     },
     {
       'id': 'gemini',
@@ -39,6 +266,7 @@ class _ProviderTypeStepState extends State<_ProviderTypeStep> {
       'baseUrl': 'https://generativelanguage.googleapis.com',
       'icon': Icons.auto_awesome,
       'color': Colors.blue,
+      'formatType': 'gemini',
     },
     {
       'id': 'ollama',
@@ -46,6 +274,7 @@ class _ProviderTypeStepState extends State<_ProviderTypeStep> {
       'baseUrl': 'http://localhost:11434/v1',
       'icon': Icons.computer,
       'color': Colors.orange,
+      'formatType': 'openai',
     },
   ];
 
@@ -60,161 +289,186 @@ class _ProviderTypeStepState extends State<_ProviderTypeStep> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Bước 1: Chọn loại nhà cung cấp AI',
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.bold,
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Bước 1: Chọn loại nhà cung cấp AI',
+            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Chọn loại dịch vụ AI bạn muốn cấu hình',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurface.withOpacity(0.7),
+          const SizedBox(height: 8),
+          Text(
+            'Chọn loại dịch vụ AI bạn muốn cấu hình',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        ),
-        const SizedBox(height: 24),
+          const SizedBox(height: 24),
 
-        // Provider type grid
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            childAspectRatio: 0.9,
-          ),
-          itemCount: _providerTypes.length,
-          itemBuilder: (context, index) {
-            final provider = _providerTypes[index];
-            final isSelected = _selectedProviderType == provider['id'];
+          // Provider type grid
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 0.9,
+            ),
+            itemCount: _providerTypes.length,
+            itemBuilder: (context, index) {
+              final provider = _providerTypes[index];
+              final isSelected = _selectedProviderType == provider['id'];
 
-            return GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedProviderType = provider['id'];
-                  _baseUrlController.text = provider['baseUrl'];
-                });
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: isSelected
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.outline,
-                    width: isSelected ? 2 : 1,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  color: isSelected
-                      ? theme.colorScheme.primary.withOpacity(0.05)
-                      : theme.colorScheme.surface,
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      provider['icon'] as IconData,
-                      size: 32,
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedProviderType = provider['id'];
+                    _baseUrlController.text = provider['baseUrl'];
+                  });
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    border: Border.all(
                       color: isSelected
-                          ? (provider['color'] as Color).darker
-                          : (provider['color'] as Color).withOpacity(0.7),
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.outlineVariant,
+                      width: isSelected ? 2 : 1,
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      provider['name'] as String,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-
-        const SizedBox(height: 24),
-
-        // Basic configuration fields
-        TextField(
-          controller: _nameController,
-          decoration: InputDecoration(
-            labelText: 'Tên nhà cung cấp',
-            hintText: 'Ví dụ: My OpenAI Connection',
-            border: const OutlineInputBorder(),
-            prefixIcon: const Icon(Icons.label_outlined),
-          ),
-          onChanged: (value) {
-            // Update baseUrl if empty when provider type changes
-            if (value.isEmpty && _selectedProviderType == 'openai') {
-              _baseUrlController.text = 'https://api.openai.com';
-            }
-          },
-        ),
-
-        const SizedBox(height: 16),
-
-        TextField(
-          controller: _baseUrlController,
-          decoration: InputDecoration(
-            labelText: 'Base URL',
-            hintText: 'https://api.example.com',
-            border: const OutlineInputBorder(),
-            prefixIcon: const Icon(Icons.link_outlined),
-          ),
-          onChanged: (value) {
-            setState(() {
-              _baseUrlController.text = value;
-            });
-          },
-        ),
-
-        const SizedBox(height: 32),
-
-        // Next button
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: () {
-              if (_nameController.text.isNotEmpty &&
-                  _baseUrlController.text.isNotEmpty) {
-                final provider = EnhancedAIProviderConfig(
-                  id: '${_selectedProviderType}_custom',
-                  name: _nameController.text,
-                  baseUrl: _baseUrlController.text,
-                  apiKeys: [],
-                  availableModels: [],
-                  selectedModel: '',
-                  status: ProviderStatus.testing,
-                  lastChecked: DateTime.now(),
-                );
-                widget.onProviderCreated(provider);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Vui lòng nhập tên nhà cung cấp và Base URL'),
+                    borderRadius: BorderRadius.circular(12),
+                    color: isSelected
+                        ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+                        : theme.colorScheme.surface,
                   ),
-                );
-              }
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        provider['icon'] as IconData,
+                        size: 32,
+                        color: isSelected
+                            ? provider['color'] as Color
+                            : (provider['color'] as Color).withValues(alpha: 0.5),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        provider['name'] as String,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              );
             },
-            icon: const Icon(Icons.arrow_forward),
-            label: const Text('Tiếp theo'),
           ),
-        ),
-      ],
+
+          const SizedBox(height: 24),
+
+          TextField(
+            controller: _nameController,
+            decoration: const InputDecoration(
+              labelText: 'Tên nhà cung cấp',
+              hintText: 'Ví dụ: My OpenAI Connection',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.label_outlined),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          TextField(
+            controller: _baseUrlController,
+            decoration: const InputDecoration(
+              labelText: 'Base URL',
+              hintText: 'https://api.example.com',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.link_outlined),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Next button (with validation)
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                if (_nameController.text.isNotEmpty &&
+                    _baseUrlController.text.isNotEmpty) {
+                  final selectedType = _providerTypes.firstWhere(
+                    (p) => p['id'] == _selectedProviderType,
+                  );
+                  final provider = AIProviderConfig(
+                    id: '${_selectedProviderType}_${DateTime.now().millisecondsSinceEpoch}',
+                    name: _nameController.text,
+                    baseUrl: _baseUrlController.text,
+                    apiKey: '',
+                    availableModels: _getDefaultModels(_selectedProviderType),
+                    selectedModel: _getDefaultModels(_selectedProviderType).first,
+                    contextWindow: _getDefaultContextWindow(_selectedProviderType),
+                    formatType: selectedType['formatType'] as String,
+                  );
+                  widget.onProviderCreated(provider);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Vui lòng nhập tên nhà cung cấp và Base URL'),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('Tiếp theo'),
+            ),
+          ),
+        ],
+      ),
     );
+  }
+
+  List<String> _getDefaultModels(String providerType) {
+    switch (providerType) {
+      case 'openai':
+        return ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo', 'o1-preview'];
+      case 'anthropic':
+        return ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'claude-3-haiku-20240307'];
+      case 'gemini':
+        return ['gemini-2.5-flash', 'gemini-2.5-pro'];
+      case 'ollama':
+        return ['llama3.1', 'mistral', 'qwen2.5'];
+      default:
+        return ['gpt-4o'];
+    }
+  }
+
+  int _getDefaultContextWindow(String providerType) {
+    switch (providerType) {
+      case 'openai':
+        return 128000;
+      case 'anthropic':
+        return 200000;
+      case 'gemini':
+        return 1000000;
+      case 'ollama':
+        return 32768;
+      default:
+        return 4096;
+    }
   }
 }
 
-// Step 2: API Key Management Screen
+// =============================================================================
+// Step 2: API Key Configuration
+// =============================================================================
+
 class _APIKeyStep extends StatefulWidget {
-  final EnhancedAIProviderConfig providerConfig;
-  final Function(EnhancedAIProviderConfig) onConfigUpdated;
+  final AIProviderConfig providerConfig;
+  final Function(AIProviderConfig) onConfigUpdated;
 
   const _APIKeyStep({
     required this.providerConfig,
@@ -227,268 +481,158 @@ class _APIKeyStep extends StatefulWidget {
 
 class _APIKeyStepState extends State<_APIKeyStep> {
   final _formKey = GlobalKey<FormState>();
-  final List<TextEditingController> _keyControllers = [];
-  final List<TextEditingController> _labelControllers = [];
-  final List<TextEditingController> _scheduleControllers = [];
-  final List<String> _rotationSchedules = ['manual', 'weekly', 'monthly', 'quarterly'];
+  late TextEditingController _keyController;
+  bool _obscureKey = true;
 
   @override
   void initState() {
     super.initState();
-    _initializeControllers();
-  }
-
-  void _initializeControllers() {
-    for (int i = 0; i < widget.providerConfig.apiKeys.length; i++) {
-      _keyControllers.add(TextEditingController(
-        text: widget.providerConfig.apiKeys[i].key.isNotEmpty
-            ? '••••••••' + widget.providerConfig.apiKeys[i].key.substring(widget.providerConfig.apiKeys[i].key.length - 4)
-            : '',
-      ));
-      _labelControllers.add(TextEditingController(
-        text: widget.providerConfig.apiKeys[i].label,
-      ));
-      _scheduleControllers.add(TextEditingController(
-        text: widget.providerConfig.apiKeys[i].rotationSchedule,
-      ));
-    }
-    // Add empty controllers for new keys
-    _addEmptyKeyControllers();
-  }
-
-  void _addEmptyKeyControllers() {
-    if (_keyControllers.length == _labelControllers.length) {
-      _keyControllers.add(TextEditingController());
-      _labelControllers.add(TextEditingController());
-      _scheduleControllers.add(TextEditingController(text: 'manual'));
-    }
+    // v1.2.0: Initialize with real key, not masked version
+    _keyController = TextEditingController(text: widget.providerConfig.apiKey);
   }
 
   @override
   void dispose() {
-    for (final controller in _keyControllers) {
-      controller.dispose();
-    }
-    for (final controller in _labelControllers) {
-      controller.dispose();
-    }
-    for (final controller in _scheduleControllers) {
-      controller.dispose();
-    }
+    _keyController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final needsKey = widget.providerConfig.requiresApiKey;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Bước 2: Cấu hình API Keys',
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.bold,
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Bước 2: Cấu hình API Key',
+            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Thêm và cấu hình API keys cho nhà cung cấp',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurface.withOpacity(0.7),
+          const SizedBox(height: 8),
+          Text(
+            needsKey
+                ? 'Nhập API key cho ${widget.providerConfig.name}'
+                : 'Nhà cung cấp local không yêu cầu API key',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        ),
-        const SizedBox(height: 24),
+          const SizedBox(height: 24),
 
-        Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              ...List.generate(_keyControllers.length, (index) {
-                return _buildKeyCard(index);
-              }),
-
-              const SizedBox(height: 16),
-
-              // Add key button
-              OutlinedButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _addEmptyKeyControllers();
-                  });
-                },
-                icon: const Icon(Icons.add),
-                label: const Text('Thêm API Key'),
+          if (!needsKey) ...[
+            Card(
+              color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.3),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: theme.colorScheme.secondary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Nhà cung cấp local (${widget.providerConfig.baseUrl}) không cần API key. '
+                        'Bạn có thể bỏ qua bước này.',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-
-              const SizedBox(height: 32),
-
-              // Next button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    if (_formKey.currentState!.validate()) {
-                      final updatedKeys = <APIKeyConfig>[];
-
-                      for (int i = 0; i < _keyControllers.length - 1; i++) {
-                        final keyText = _keyControllers[i].text;
-                        final labelText = _labelControllers[i].text;
-                        final scheduleText = _scheduleControllers[i].text;
-
-                        if (keyText.isNotEmpty && labelText.isNotEmpty) {
-                          // Mask the key (show only last 4 characters)
-                          final maskedKey = keyText.length > 4
-                              ? '••••••••' + keyText.substring(keyText.length - 4)
-                              : keyText;
-
-                          updatedKeys.add(APIKeyConfig(
-                            key: maskedKey,
-                            label: labelText,
-                            isPrimary: i == 0,
-                            lastUsed: DateTime.now(),
-                            isActive: true,
-                            rotationSchedule: scheduleText,
-                          ));
-                        }
+            ),
+          ] else ...[
+            Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _keyController,
+                    obscureText: _obscureKey,
+                    decoration: InputDecoration(
+                      labelText: 'API Key',
+                      hintText: 'Nhập API key của bạn',
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.vpn_key_outlined),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscureKey ? Icons.visibility_off : Icons.visibility),
+                        onPressed: () => setState(() => _obscureKey = !_obscureKey),
+                      ),
+                    ),
+                    validator: (value) {
+                      if (needsKey && (value == null || value.isEmpty)) {
+                        return 'Vui lòng nhập API key';
                       }
-
-                      final updatedConfig = widget.providerConfig.copyWith(
-                        apiKeys: updatedKeys,
-                        status: ProviderStatus.testing,
-                        lastChecked: DateTime.now(),
-                      );
-
-                      widget.onConfigUpdated(updatedConfig);
-                    }
-                  },
-                  icon: const Icon(Icons.arrow_forward),
-                  label: const Text('Tiếp theo'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildKeyCard(int index) {
-    final theme = Theme.of(context);
-    final isLast = index == _keyControllers.length - 1;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'API Key ${index + 1}',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (isLast)
-                  IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _keyControllers.removeAt(index);
-                        _labelControllers.removeAt(index);
-                        _scheduleControllers.removeAt(index);
-                      });
+                      return null;
                     },
-                    icon: const Icon(Icons.delete, color: Colors.red),
                   ),
-              ],
-            ),
 
-            const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-            TextFormField(
-              controller: _labelControllers[index],
-              decoration: const InputDecoration(
-                labelText: 'Tên key',
-                hintText: 'Ví dụ: Primary Key',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.label_outlined),
+                  // Test connection button
+                  if (_keyController.text.isNotEmpty)
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final manager = Provider.of<AIProviderManager>(context, listen: false);
+                        final testConfig = widget.providerConfig.copyWith(
+                          apiKey: _keyController.text,
+                        );
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Đang kiểm tra kết nối...')),
+                        );
+
+                        final result = await manager.testProviderPing(testConfig);
+
+                        if (!context.mounted) return;
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(result.isSuccess
+                                ? '✓ Kết nối thành công (${result.latencyMs}ms)'
+                                : '✗ Không thể kết nối: ${result.errorMessage ?? "Lỗi không xác định"}'),
+                            backgroundColor: result.isSuccess ? Colors.green : Colors.red,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.wifi_find),
+                      label: const Text('Kiểm tra kết nối'),
+                    ),
+                ],
               ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Vui lòng nhập tên key';
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: 12),
-
-            TextFormField(
-              controller: _keyControllers[index],
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'API Key',
-                hintText: 'Nhập API key (sẽ được che giấu)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.vpn_key_outlined),
-              ),
-              validator: (value) {
-                if (!isLast && (value == null || value.isEmpty)) {
-                  return 'Bỏ trống chỉ dành cho key cuối cùng';
-                }
-                return null;
-              },
-            ),
-
-            const SizedBox(height: 12),
-
-            DropdownButtonFormField<String>(
-              value: _scheduleControllers[index].text,
-              decoration: const InputDecoration(
-                labelText: 'Lịch trình rotation',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.schedule),
-              ),
-              items: _rotationSchedules
-                  .map((schedule) => DropdownMenuItem(
-                        value: schedule,
-                        child: Text(_getScheduleDisplayName(schedule)),
-                      ))
-                  .toList(),
-              onChanged: (value) {
-                setState(() {
-                  _scheduleControllers[index].text = value ?? 'manual';
-                });
-              },
             ),
           ],
-        ),
+
+          const SizedBox(height: 32),
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                if (!needsKey || _formKey.currentState!.validate()) {
+                  final updatedConfig = widget.providerConfig.copyWith(
+                    apiKey: _keyController.text,
+                  );
+                  widget.onConfigUpdated(updatedConfig);
+                }
+              },
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('Tiếp theo'),
+            ),
+          ),
+        ],
       ),
     );
   }
-
-  String _getScheduleDisplayName(String schedule) {
-    switch (schedule) {
-      case 'weekly':
-        return 'Hàng tuần';
-      case 'monthly':
-        return 'Hàng tháng';
-      case 'quarterly':
-        return 'Hàng quý';
-      default:
-        return 'Thủ công';
-    }
-  }
 }
 
-// Step 3: Model Selection Screen
+// =============================================================================
+// Step 3: Model Selection
+// =============================================================================
+
 class _ModelSelectionStep extends StatefulWidget {
-  final EnhancedAIProviderConfig providerConfig;
-  final Function(EnhancedAIProviderConfig) onConfigUpdated;
+  final AIProviderConfig providerConfig;
+  final Function(AIProviderConfig) onConfigUpdated;
 
   const _ModelSelectionStep({
     required this.providerConfig,
@@ -501,26 +645,13 @@ class _ModelSelectionStep extends StatefulWidget {
 
 class _ModelSelectionStepState extends State<_ModelSelectionStep> {
   final _formKey = GlobalKey<FormState>();
-  final List<String> _availableModels = [
-    'gpt-4o',
-    'gpt-4o-mini',
-    'gpt-3.5-turbo',
-    'claude-3-5-sonnet-20240620',
-    'claude-3-opus-20240229',
-    'claude-3-haiku-20240307',
-    'gemini-2.5-flash',
-    'gemini-2.5-pro',
-    'llama3.1',
-    'mistral',
-    'qwen2.5',
-  ];
-  final TextEditingController _contextWindowController = TextEditingController(text: '4096');
-  final TextEditingController _temperatureController = TextEditingController(text: '0.7');
-  final TextEditingController _maxTokensController = TextEditingController(text: '4096');
+  final TextEditingController _temperatureController =
+      TextEditingController(text: '0.7');
+  final TextEditingController _maxTokensController =
+      TextEditingController(text: '4096');
 
   @override
   void dispose() {
-    _contextWindowController.dispose();
     _temperatureController.dispose();
     _maxTokensController.dispose();
     super.dispose();
@@ -529,179 +660,164 @@ class _ModelSelectionStepState extends State<_ModelSelectionStep> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // v1.2.0: Filter models by provider type
+    final models = widget.providerConfig.availableModels.isNotEmpty
+        ? widget.providerConfig.availableModels
+        : _getModelsForProvider(widget.providerConfig.formatType);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Bước 3: Chọn Model và Tham số',
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.bold,
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Bước 3: Chọn Model và Tham số',
+            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Chọn model mong muốn và thiết lập tham số',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurface.withOpacity(0.7),
+          const SizedBox(height: 8),
+          Text(
+            'Chọn model mong muốn và thiết lập tham số cho ${widget.providerConfig.name}',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        ),
-        const SizedBox(height: 24),
+          const SizedBox(height: 24),
 
-        Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              // Model selection
-              DropdownButtonFormField<String>(
-                value: widget.providerConfig.selectedModel.isEmpty
-                    ? null
-                    : widget.providerConfig.selectedModel,
-                decoration: const InputDecoration(
-                  labelText: 'Model',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.model_training),
-                ),
-                items: _availableModels
-                    .map((model) => DropdownMenuItem(
-                          value: model,
-                          child: Text(model),
-                        ))
-                    .toList(),
-                onChanged: (value) {
-                  // Update provider config
-                  final updatedConfig = widget.providerConfig.copyWith(
-                    selectedModel: value ?? '',
-                    status: ProviderStatus.testing,
-                    lastChecked: DateTime.now(),
-                  );
-                  widget.onConfigUpdated(updatedConfig);
-                },
-              ),
-
-              const SizedBox(height: 16),
-
-              // Context window
-              TextFormField(
-                controller: _contextWindowController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Context Window',
-                  hintText: 'Ví dụ: 4096',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.memory),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Vui lòng nhập context window';
-                  }
-                  final num = int.tryParse(value);
-                  if (num == null || num <= 0) {
-                    return 'Context window phải là số dương';
-                  }
-                  return null;
-                },
-                onChanged: (value) {
-                  final updatedConfig = widget.providerConfig.copyWith(
-                    contextWindow: int.tryParse(value) ?? 4096,
-                  );
-                  widget.onConfigUpdated(updatedConfig);
-                },
-              ),
-
-              const SizedBox(height: 16),
-
-              // Temperature
-              TextFormField(
-                controller: _temperatureController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Temperature',
-                  hintText: 'Ví dụ: 0.7',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.thermostat),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Vui lòng nhập temperature';
-                  }
-                  final num = double.tryParse(value);
-                  if (num == null || num < 0 || num > 2) {
-                    return 'Temperature phải từ 0.0 đến 2.0';
-                  }
-                  return null;
-                },
-                onChanged: (value) {
-                  final updatedConfig = widget.providerConfig.copyWith(
-                    temperature: double.tryParse(value) ?? 0.7,
-                  );
-                  widget.onConfigUpdated(updatedConfig);
-                },
-              ),
-
-              const SizedBox(height: 16),
-
-              // Max tokens
-              TextFormField(
-                controller: _maxTokensController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Max Tokens',
-                  hintText: 'Ví dụ: 4096',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.numbers),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Vui lòng nhập max tokens';
-                  }
-                  final num = int.tryParse(value);
-                  if (num == null || num <= 0) {
-                    return 'Max tokens phải là số dương';
-                  }
-                  return null;
-                },
-                onChanged: (value) {
-                  final updatedConfig = widget.providerConfig.copyWith(
-                    maxTokens: int.tryParse(value) ?? 4096,
-                  );
-                  widget.onConfigUpdated(updatedConfig);
-                },
-              ),
-
-              const SizedBox(height: 32),
-
-              // Next button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    if (_formKey.currentState!.validate()) {
-                      final updatedConfig = widget.providerConfig.copyWith(
-                        contextWindow: int.tryParse(_contextWindowController.text) ?? 4096,
-                        temperature: double.tryParse(_temperatureController.text) ?? 0.7,
-                        maxTokens: int.tryParse(_maxTokensController.text) ?? 4096,
-                        status: ProviderStatus.healthy,
-                        lastChecked: DateTime.now(),
+          Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                // Model selection — v1.2.0: provider-filtered models
+                DropdownButtonFormField<String>(
+                  initialValue: models.contains(widget.providerConfig.selectedModel)
+                      ? widget.providerConfig.selectedModel
+                      : (models.isNotEmpty ? models.first : null),
+                  decoration: const InputDecoration(
+                    labelText: 'Model',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.model_training),
+                  ),
+                  items: models
+                      .map((model) => DropdownMenuItem(
+                            value: model,
+                            child: Text(model),
+                          ))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      widget.onConfigUpdated(
+                        widget.providerConfig.copyWith(selectedModel: value),
                       );
-                      widget.onConfigUpdated(updatedConfig);
                     }
                   },
-                  icon: const Icon(Icons.arrow_forward),
-                  label: const Text('Tiếp theo'),
                 ),
-              ),
-            ],
+
+                const SizedBox(height: 16),
+
+                // Fetch models button
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final manager = Provider.of<AIProviderManager>(context, listen: false);
+                    final config = widget.providerConfig;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Đang lấy danh sách models...')),
+                    );
+                    final fetched = await manager.fetchAvailableModels(config);
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Tìm thấy ${fetched.length} models')),
+                    );
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Lấy models từ server'),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Temperature
+                TextFormField(
+                  controller: _temperatureController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Temperature (0.0 - 2.0)',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.thermostat),
+                  ),
+                  validator: (value) {
+                    final num = double.tryParse(value ?? '');
+                    if (num == null || num < 0 || num > 2) {
+                      return 'Temperature phải từ 0.0 đến 2.0';
+                    }
+                    return null;
+                  },
+                ),
+
+                const SizedBox(height: 16),
+
+                // Max tokens
+                TextFormField(
+                  controller: _maxTokensController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Max Tokens',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.numbers),
+                  ),
+                  validator: (value) {
+                    final num = int.tryParse(value ?? '');
+                    if (num == null || num <= 0) {
+                      return 'Max tokens phải là số dương';
+                    }
+                    return null;
+                  },
+                ),
+
+                const SizedBox(height: 32),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      if (_formKey.currentState!.validate()) {
+                        final updatedConfig = widget.providerConfig.copyWith(
+                          temperature: double.tryParse(_temperatureController.text) ?? 0.7,
+                          maxTokens: int.tryParse(_maxTokensController.text) ?? 4096,
+                        );
+                        widget.onConfigUpdated(updatedConfig);
+                      }
+                    },
+                    icon: const Icon(Icons.arrow_forward),
+                    label: const Text('Tiếp theo'),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
+  }
+
+  /// v1.2.0: Return models filtered by provider format type
+  List<String> _getModelsForProvider(String formatType) {
+    switch (formatType) {
+      case 'openai':
+        return ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo', 'o1-preview'];
+      case 'anthropic':
+        return ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'claude-3-haiku-20240307'];
+      case 'gemini':
+        return ['gemini-2.5-flash', 'gemini-2.5-pro'];
+      default:
+        return ['gpt-4o', 'gpt-3.5-turbo'];
+    }
   }
 }
 
-// Step 4: Summary and Configuration Complete
+// =============================================================================
+// Step 4: Summary
+// =============================================================================
+
 class _SummaryStep extends StatelessWidget {
-  final EnhancedAIProviderConfig providerConfig;
+  final AIProviderConfig providerConfig;
   final Function() onConfigurationComplete;
 
   const _SummaryStep({
@@ -712,129 +828,101 @@ class _SummaryStep extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final hasKey = providerConfig.apiKey.isNotEmpty;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Bước 4: Hoàn thành cấu hình',
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.bold,
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Bước 4: Hoàn thành cấu hình',
+            style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Xem lại cấu hình của bạn và bắt đầu sử dụng',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurface.withOpacity(0.7),
-          ),
-        ),
-        const SizedBox(height: 24),
-
-        // Configuration summary card
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      providerConfig.apiKeys.isNotEmpty
-                          ? Icons.check_circle
-                          : Icons.warning,
-                      color: providerConfig.apiKeys.isNotEmpty
-                          ? Colors.green
-                          : Colors.orange,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        providerConfig.name,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const Divider(height: 24),
-
-                _buildSummaryRow(
-                  context,
-                  'Base URL',
-                  providerConfig.baseUrl,
-                  Icons.link,
-                ),
-
-                _buildSummaryRow(
-                  context,
-                  'Model',
-                  providerConfig.selectedModel,
-                  Icons.model_training,
-                ),
-
-                _buildSummaryRow(
-                  context,
-                  'API Keys',
-                  '${providerConfig.apiKeys.length} key(s)',
-                  Icons.vpn_key,
-                ),
-
-                _buildSummaryRow(
-                  context,
-                  'Context Window',
-                  '${providerConfig.contextWindow}',
-                  Icons.memory,
-                ),
-
-                _buildSummaryRow(
-                  context,
-                  'Temperature',
-                  '${providerConfig.temperature}',
-                  Icons.thermostat,
-                ),
-
-                _buildSummaryRow(
-                  context,
-                  'Max Tokens',
-                  '${providerConfig.maxTokens}',
-                  Icons.numbers,
-                ),
-
-                const Divider(height: 24),
-
-                _buildStatusRow(context, providerConfig.status),
-
-                const SizedBox(height: 24),
-
-                // Start button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: onConfigurationComplete,
-                    icon: const Icon(Icons.check_circle),
-                    label: const Text('Bắt đầu sử dụng'),
-                  ),
-                ),
-              ],
+          const SizedBox(height: 8),
+          Text(
+            'Xem lại cấu hình của bạn và bắt đầu sử dụng',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: 24),
+
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        hasKey ? Icons.check_circle : Icons.warning,
+                        color: hasKey ? Colors.green : Colors.orange,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          providerConfig.name,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const Divider(height: 24),
+
+                  _buildSummaryRow(context, 'Base URL', providerConfig.baseUrl, Icons.link),
+                  _buildSummaryRow(context, 'Model', providerConfig.selectedModel, Icons.model_training),
+                  _buildSummaryRow(
+                    context,
+                    'API Key',
+                    hasKey ? '••••••${providerConfig.apiKey.substring(providerConfig.apiKey.length > 4 ? providerConfig.apiKey.length - 4 : 0)}' : 'Chưa cấu hình',
+                    Icons.vpn_key,
+                  ),
+                  _buildSummaryRow(context, 'Format', providerConfig.formatType, Icons.code),
+                  _buildSummaryRow(context, 'Context Window', '${providerConfig.contextWindow}', Icons.memory),
+                  _buildSummaryRow(context, 'Temperature', '${providerConfig.temperature}', Icons.thermostat),
+                  _buildSummaryRow(context, 'Max Tokens', '${providerConfig.maxTokens}', Icons.numbers),
+
+                  if (!hasKey && providerConfig.requiresApiKey) ...[
+                    const Divider(height: 24),
+                    Row(
+                      children: [
+                        const Icon(Icons.warning, color: Colors.orange, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Cảnh báo: Chưa có API key. Bạn cần thêm key trước khi sử dụng.',
+                            style: theme.textTheme.bodySmall?.copyWith(color: Colors.orange),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  const SizedBox(height: 24),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: onConfigurationComplete,
+                      icon: const Icon(Icons.check_circle),
+                      label: const Text('Bắt đầu sử dụng'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildSummaryRow(
-    BuildContext context,
-    String label,
-    String value,
-    IconData icon,
-  ) {
+  Widget _buildSummaryRow(BuildContext context, String label, String value, IconData icon) {
     final theme = Theme.of(context);
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -844,215 +932,18 @@ class _SummaryStep extends StatelessWidget {
           Expanded(
             child: Text(
               '$label: ',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
-          Text(
-            value,
-            style: theme.textTheme.bodyMedium,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusRow(BuildContext context, ProviderStatus status) {
-    final theme = Theme.of(context);
-
-    return Row(
-      children: [
-        Icon(
-          _getStatusIcon(status),
-          size: 20,
-          color: _getStatusColor(status),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            'Trạng thái: ${_getStatusDisplayName(status)}',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: _getStatusColor(status),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  IconData _getStatusIcon(ProviderStatus status) {
-    switch (status) {
-      case ProviderStatus.unknown:
-        return Icons.help_outline;
-      case ProviderStatus.testing:
-        return Icons.hourglass_empty;
-      case ProviderStatus.healthy:
-        return Icons.check_circle;
-      case ProviderStatus.degraded:
-        return Icons.warning;
-      case ProviderStatus.failed:
-        return Icons.error_outline;
-      case ProviderStatus.rotated:
-        return Icons.autorenew;
-    }
-  }
-
-  Color _getStatusColor(ProviderStatus status) {
-    switch (status) {
-      case ProviderStatus.unknown:
-        return Colors.grey;
-      case ProviderStatus.testing:
-        return Colors.orange;
-      case ProviderStatus.healthy:
-        return Colors.green;
-      case ProviderStatus.degraded:
-        return Colors.amber;
-      case ProviderStatus.failed:
-        return Colors.red;
-      case ProviderStatus.rotated:
-        return Colors.blue;
-    }
-  }
-
-  String _getStatusDisplayName(ProviderStatus status) {
-    switch (status) {
-      case ProviderStatus.unknown:
-        return 'Unknown';
-      case ProviderStatus.testing:
-        return 'Đang kiểm tra';
-      case ProviderStatus.healthy:
-        return 'Đã kiểm tra';
-      case ProviderStatus.degraded:
-        return ' degraded';
-      case ProviderStatus.failed:
-        return 'Thất bại';
-      case ProviderStatus.rotated:
-        return 'Đã rotation';
-    }
-  }
-}
-
-// Main Configuration Wizard
-class ConfigurationWizard extends StatefulWidget {
-  const ConfigurationWizard({super.key});
-
-  @override
-  State<ConfigurationWizard> createState() => _ConfigurationWizardState();
-}
-
-class _ConfigurationWizardState extends State<ConfigurationWizard> {
-  int _currentStep = 0;
-  EnhancedAIProviderConfig? _currentProvider;
-
-  List<Widget> get _steps => [
-    _ProviderTypeStep(onProviderCreated: _updateCurrentProvider),
-    _APIKeyStep(providerConfig: _currentProvider ?? EnhancedAIProviderConfig(id: '', name: '', baseUrl: ''), onConfigUpdated: _updateCurrentProvider),
-    _ModelSelectionStep(providerConfig: _currentProvider ?? EnhancedAIProviderConfig(id: '', name: '', baseUrl: ''), onConfigUpdated: _updateCurrentProvider),
-    _SummaryStep(providerConfig: _currentProvider ?? EnhancedAIProviderConfig(id: '', name: '', baseUrl: ''), onConfigurationComplete: _completeConfiguration),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Cấu hình Nhà cung cấp AI'),
-        backgroundColor: theme.colorScheme.surface,
-        elevation: 0,
-      ),
-      body: Column(
-        children: [
-          // Progress indicator
-          LinearProgressIndicator(
-            value: (_currentStep + 1) / _steps.length,
-            backgroundColor: theme.colorScheme.surface,
-            valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
-          ),
-
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: _steps[_currentStep],
-            ),
-          ),
-
-          // Navigation buttons
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                if (_currentStep > 0)
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _currentStep--;
-                      });
-                    },
-                    icon: const Icon(Icons.arrow_back),
-                    label: const Text('Quay lại'),
-                  )
-                else
-                  const SizedBox(width: 100),
-
-                ElevatedButton.icon(
-                  onPressed: () {
-                    if (_currentStep < _steps.length - 1) {
-                      setState(() {
-                        _currentStep++;
-                      });
-                    } else {
-                      // Complete configuration
-                      _completeConfiguration();
-                    }
-                  },
-                  icon: Icon(_currentStep < _steps.length - 1
-                      ? Icons.arrow_forward
-                      : Icons.check_circle),
-                  label: Text(_currentStep < _steps.length - 1
-                      ? 'Tiếp theo'
-                      : 'Hoàn thành'),
-                ),
-              ],
+          Flexible(
+            child: Text(
+              value,
+              style: theme.textTheme.bodyMedium,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
       ),
     );
   }
-
-  void _updateCurrentProvider(EnhancedAIProviderConfig config) {
-    setState(() {
-      _currentProvider = config;
-    });
-  }
-
-  void _completeConfiguration() {
-    if (_currentProvider != null) {
-      // Save to provider manager
-      final manager = Provider.of<EnhancedAIProviderManager>(
-        context,
-        listen: false,
-      );
-      manager.addProvider(_currentProvider!);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Đã cấu hình nhà cung cấp AI thành công: ${_currentProvider!.name}'),
-          backgroundColor: Colors.green,
-        ),
-      );
-
-      Navigator.pop(context);
-    }
-  }
-}
-
-// Extension for Color class
-extension ColorUtils on Color {
-  Color get lighter => withOpacity(0.1);
-  Color get darker => withOpacity(0.8);
 }

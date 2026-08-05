@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/slide.dart';
 import '../../providers/ai_provider_manager.dart';
+import '../../utils/error_mapper.dart';
 
 class SlideAiToolsDialog extends StatefulWidget {
   final Slide slide;
@@ -79,9 +80,7 @@ $promptTask
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi AI: $e')),
-        );
+        ErrorMapper.showErrorSnackBar(context, e);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

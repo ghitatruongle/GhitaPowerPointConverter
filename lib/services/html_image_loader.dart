@@ -26,7 +26,10 @@ class HtmlImageLoader {
   static final RegExp _dataUriRegExp =
       RegExp(r'^data:image/(png|jpe?g|gif);base64,(.+)$', dotAll: true);
 
-  static LoadedImage? load(String src) {
+  /// Load an exportable image and, when [maxWidth] is set, downscale it to
+  /// that pixel width while preserving aspect ratio. Re-encoding resized
+  /// files as PNG keeps the result deterministic across PPTX, PDF and HTML.
+  static LoadedImage? load(String src, {int? maxWidth}) {
     final trimmed = src.trim();
     if (trimmed.isEmpty) return null;
 
@@ -64,6 +67,16 @@ class HtmlImageLoader {
     // Decode to obtain intrinsic dimensions (also validates the bytes).
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return null;
+
+    if (maxWidth != null && maxWidth > 0 && decoded.width > maxWidth) {
+      final resized = img.copyResize(decoded, width: maxWidth);
+      return LoadedImage(
+        bytes: Uint8List.fromList(img.encodePng(resized)),
+        ext: 'png',
+        width: resized.width,
+        height: resized.height,
+      );
+    }
 
     return LoadedImage(
       bytes: bytes,

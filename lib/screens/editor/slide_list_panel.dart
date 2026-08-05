@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/presentation_state.dart';
-import '../../models/slide.dart';
 import '../../screens/widgets/slide_preview.dart';
+import '../../l10n/l10n.dart';
 import '../editor/editor_state.dart';
 
 /// Left panel showing slide thumbnails with drag-to-reorder,
@@ -24,86 +24,107 @@ class SlideListPanel extends StatelessWidget {
     final slides = presentationState.slides;
     final theme = Theme.of(context);
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-              border: Border(
-                bottom: BorderSide(color: theme.dividerColor, width: 0.5),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.slideshow, size: 16, color: theme.colorScheme.primary),
-                const SizedBox(width: 6),
-                Text(
-                  'Slides (${slides.length})',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+    return Semantics(
+      container: true,
+      label: context.l10n.slideListSemantics(slides.length),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            // Header
+            Semantics(
+              header: true,
+              label: context.l10n.slideListSemantics(slides.length),
+              child: ExcludeSemantics(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest
+                        .withValues(alpha: 0.3),
+                    border: Border(
+                      bottom: BorderSide(color: theme.dividerColor, width: 0.5),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.slideshow,
+                          size: 16, color: theme.colorScheme.primary),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          context.l10n.slideCount(slides.length),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add, size: 18),
+                        tooltip: context.l10n.addSlideTooltip,
+                        onPressed: onAddSlide,
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints:
+                            const BoxConstraints(minWidth: 28, minHeight: 28),
+                      ),
+                    ],
                   ),
                 ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.add, size: 18),
-                  tooltip: 'New Slide (Ctrl+M)',
-                  onPressed: onAddSlide,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
-            ),
-          ),
-
-          // Slide list
-          Expanded(
-            child: slides.isEmpty
-                ? _buildEmptyState(context)
-                : _buildSlideList(context, presentationState, editorState, slides),
-          ),
-
-          // Footer actions
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(color: theme.dividerColor, width: 0.5),
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _footerButton(
-                  context,
-                  icon: Icons.add_circle_outline,
-                  tooltip: 'New Slide',
-                  onPressed: onAddSlide,
-                ),
-                _footerButton(
-                  context,
-                  icon: Icons.copy,
-                  tooltip: 'Duplicate',
-                  onPressed: editorState.selectedSlideIndex >= 0
-                      ? () => presentationState.duplicateSlide(editorState.selectedSlideIndex)
-                      : null,
-                ),
-                _footerButton(
-                  context,
-                  icon: Icons.delete_outline,
-                  tooltip: 'Delete',
-                  color: Colors.red,
-                  onPressed: editorState.selectedSlideIndex >= 0
-                      ? () => _deleteSlideWithUndo(
-                          context, presentationState, editorState.selectedSlideIndex)
-                      : null,
-                ),
-              ],
+
+            // Slide list
+            Expanded(
+              child: slides.isEmpty
+                  ? _buildEmptyState(context)
+                  : _buildSlideList(
+                      context, presentationState, editorState, slides),
             ),
-          ),
-        ],
+
+            // Footer actions
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: theme.dividerColor, width: 0.5),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _footerButton(
+                    context,
+                    icon: Icons.add_circle_outline,
+                    tooltip: 'New Slide',
+                    onPressed: onAddSlide,
+                  ),
+                  _footerButton(
+                    context,
+                    icon: Icons.copy,
+                    tooltip: 'Duplicate',
+                    onPressed: editorState.selectedSlideIndex >= 0
+                        ? () => presentationState
+                            .duplicateSlide(editorState.selectedSlideIndex)
+                        : null,
+                  ),
+                  _footerButton(
+                    context,
+                    icon: Icons.delete_outline,
+                    tooltip: 'Delete',
+                    color: Colors.red,
+                    onPressed: editorState.selectedSlideIndex >= 0
+                        ? () => _deleteSlideWithUndo(context, presentationState,
+                            editorState.selectedSlideIndex)
+                        : null,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -153,7 +174,8 @@ class SlideListPanel extends StatelessWidget {
             return Material(
               elevation: elevation,
               color: Colors.transparent,
-              shadowColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+              shadowColor:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
               child: child,
             );
           },
@@ -175,7 +197,8 @@ class SlideListPanel extends StatelessWidget {
             editorState.editSlide(index, presentationState);
           },
           onDuplicate: () => presentationState.duplicateSlide(index),
-          onDelete: () => _deleteSlideWithUndo(context, presentationState, index),
+          onDelete: () =>
+              _deleteSlideWithUndo(context, presentationState, index),
           onPreview: () => _previewSlide(context, slide),
         );
       },
@@ -230,8 +253,8 @@ class SlideListPanel extends StatelessWidget {
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                  child: SlidePreview(
-                      title: slide.title, html: slide.htmlContent),
+                  child:
+                      SlidePreview(title: slide.title, html: slide.htmlContent),
                 ),
               ),
             ],
@@ -284,109 +307,123 @@ class _SlideThumbnailCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(6),
-        side: BorderSide(
-          color: isSelected
-              ? theme.colorScheme.primary
-              : theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
-          width: isSelected ? 2 : 0.5,
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: () => _showContextMenu(context),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Slide number badge + thumbnail
-            Stack(
+    return Semantics(
+      label: context.l10n.slideSemanticLabel(index + 1, slide.title),
+      hint: context.l10n.slideSemanticHint,
+      button: true,
+      selected: isSelected,
+      onTap: onTap,
+      onLongPress: () => _showContextMenu(context),
+      child: ExcludeSemantics(
+        child: Card(
+          margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(6),
+            side: BorderSide(
+              color: isSelected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+              width: isSelected ? 2 : 0.5,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            onLongPress: () => _showContextMenu(context),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Thumbnail preview area
-                Container(
-                  height: 80,
-                  color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                  child: Center(
-                    child: _buildMiniThumbnail(context),
-                  ),
-                ),
-                // Slide number badge
-                Positioned(
-                  top: 4,
-                  left: 4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(4),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.15),
-                          blurRadius: 2,
+                // Slide number badge + thumbnail
+                Stack(
+                  children: [
+                    // Thumbnail preview area
+                    Container(
+                      height: 80,
+                      color: theme.colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.3),
+                      child: Center(
+                        child: _buildMiniThumbnail(context),
+                      ),
+                    ),
+                    // Slide number badge
+                    Positioned(
+                      top: 4,
+                      left: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(4),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.15),
+                              blurRadius: 2,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: Text(
-                      '${index + 1}',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: isSelected
-                            ? theme.colorScheme.onPrimary
-                            : theme.colorScheme.onSurface,
+                        child: Text(
+                          '${index + 1}',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: isSelected
+                                ? theme.colorScheme.onPrimary
+                                : theme.colorScheme.onSurface,
+                          ),
+                        ),
                       ),
                     ),
+                    // Transition effect indicator
+                    if (slide.effect != null)
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.tertiaryContainer,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Icon(
+                            Icons.animation,
+                            size: 10,
+                            color: theme.colorScheme.onTertiaryContainer,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                // Title + structure chips
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        slide.title,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: isSelected
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      _buildStructureChips(slide.htmlContent, theme),
+                    ],
                   ),
                 ),
-                // Transition effect indicator
-                if (slide.effect != null)
-                  Positioned(
-                    top: 4,
-                    right: 4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.tertiaryContainer,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Icon(
-                        Icons.animation,
-                        size: 10,
-                        color: theme.colorScheme.onTertiaryContainer,
-                      ),
-                    ),
-                  ),
               ],
             ),
-            // Title + structure chips
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    slide.title,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: isSelected
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurface,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-                  _buildStructureChips(slide.htmlContent, theme),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -484,7 +521,8 @@ class _SlideThumbnailCard extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(fontSize: 8, color: color, fontWeight: FontWeight.w600),
+        style:
+            TextStyle(fontSize: 8, color: color, fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -498,13 +536,14 @@ class _SlideThumbnailCard extends StatelessWidget {
       context: context,
       position: RelativeRect.fill,
       items: <PopupMenuEntry<String>>[
-        PopupMenuItem<String>(value: 'edit', child: const Text('Edit Slide')),
-        PopupMenuItem<String>(value: 'duplicate', child: const Text('Duplicate')),
-        PopupMenuItem<String>(value: 'preview', child: const Text('Preview')),
+        const PopupMenuItem<String>(value: 'edit', child: Text('Edit Slide')),
+        const PopupMenuItem<String>(
+            value: 'duplicate', child: Text('Duplicate')),
+        const PopupMenuItem<String>(value: 'preview', child: Text('Preview')),
         const PopupMenuDivider(),
-        PopupMenuItem<String>(
+        const PopupMenuItem<String>(
           value: 'delete',
-          child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          child: Text('Delete', style: TextStyle(color: Colors.red)),
         ),
       ],
     ).then((value) {

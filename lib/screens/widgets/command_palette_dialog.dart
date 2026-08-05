@@ -28,6 +28,12 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
   String _query = '';
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final filtered = widget.items.where((item) {
       return item.title.toLowerCase().contains(_query.toLowerCase()) ||

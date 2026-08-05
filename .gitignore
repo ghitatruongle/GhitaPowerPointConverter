@@ -32,6 +32,12 @@
 .pub/
 build/
 
+# Locally generated installer packages
+/installer/output/
+
+# Accidental Windows reserved-device filename
+/nul
+
 # Windows specific build artifacts
 windows/flutter/ephemeral/
 *.pdb

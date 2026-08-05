@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as dom;
+import '../models/export_options.dart';
 import '../models/slide.dart';
 import 'html_image_loader.dart';
 
@@ -16,8 +17,8 @@ class _SlideRels {
     final id = 'rId$_next';
     _next++;
     final mode = external ? ' TargetMode="External"' : '';
-    _entries.add(
-        '  <Relationship Id="$id" Type="$type" Target="$target"$mode/>');
+    _entries
+        .add('  <Relationship Id="$id" Type="$type" Target="$target"$mode/>');
     return id;
   }
 
@@ -56,11 +57,30 @@ class _MediaFile {
   _MediaFile(this.name, this.bytes);
 }
 
+/// Per-export slide geometry derived from the selected aspect ratio.
+/// Keeping it explicit prevents 1:1 and portrait exports from being written
+/// with a 4:3 canvas and then merely labelled as another ratio.
+class _PptGeometry {
+  const _PptGeometry(this.aspectRatio);
+
+  final ExportAspectRatio aspectRatio;
+
+  int get width => aspectRatio.widthEmu;
+  int get height => aspectRatio.heightEmu;
+  int get contentX => (width * 0.05).round().clamp(228600, 457200).toInt();
+  int get contentWidth => width - contentX * 2;
+  int get contentBottom => (height * 0.96).round();
+  int get titleY => (height * 0.04).round();
+  int get titleHeight => (height / 6).round();
+  int get subtitleY => (height * 0.20).round();
+  int get subtitleHeight => (height / 15).round();
+  int get contentTopWithoutSubtitle => (height * 0.2333333333).round();
+  int get contentTopWithSubtitle => (height * 0.2833333333).round();
+}
+
 class PPTGenerator {
   // EMU geometry constants.
   static const int _emuPerPx = 9525;
-  static const int _contentX = 457200;
-  static const int _contentBottom = 6583680;
 
   /// Add an XML/text part using the actual UTF-8 byte length.
   ///
@@ -78,11 +98,28 @@ class PPTGenerator {
     String outputPath, {
     SlideEffect effect = SlideEffect.none,
     bool widescreen = true,
+    ExportAspectRatio? aspectRatio,
+    bool includeNotes = true,
+    bool includeBackgrounds = true,
+    int? imageMaxWidth,
     Duration? autoAdvance,
   }) async {
     try {
+      if (slides.isEmpty) {
+        throw ArgumentError.value(
+          slides,
+          'slides',
+          'Cannot export an empty presentation',
+        );
+      }
       final pptxBytes = _createPPTXArchive(slides,
-          effect: effect, widescreen: widescreen, autoAdvance: autoAdvance);
+          effect: effect,
+          widescreen: widescreen,
+          aspectRatio: aspectRatio,
+          includeNotes: includeNotes,
+          includeBackgrounds: includeBackgrounds,
+          imageMaxWidth: imageMaxWidth,
+          autoAdvance: autoAdvance);
       final outputFile = File(outputPath);
       await outputFile.create(recursive: true);
       await outputFile.writeAsBytes(pptxBytes);
@@ -96,8 +133,18 @@ class PPTGenerator {
     List<Map<String, dynamic>> slides, {
     SlideEffect effect = SlideEffect.none,
     bool widescreen = true,
+    ExportAspectRatio? aspectRatio,
+    bool includeNotes = true,
+    bool includeBackgrounds = true,
+    int? imageMaxWidth,
     Duration? autoAdvance,
   }) {
+    final geometry = _PptGeometry(
+      aspectRatio ??
+          (widescreen
+              ? ExportAspectRatio.widescreen16x9
+              : ExportAspectRatio.standard4x3),
+    );
     final archive = Archive();
     final mediaFiles = <_MediaFile>[];
     final mediaExts = <String>{};
@@ -128,7 +175,9 @@ class PPTGenerator {
         slide,
         slideNum,
         slideEffect,
-        widescreen: widescreen,
+        geometry: geometry,
+        includeBackgrounds: includeBackgrounds,
+        imageMaxWidth: imageMaxWidth,
         autoAdvanceMs: autoAdvanceMs > 0 ? autoAdvanceMs : null,
         rels: rels,
         media: slideMedia,
@@ -145,7 +194,7 @@ class PPTGenerator {
       if (notes.isEmpty) {
         notes = extractNotes((slide['htmlContent'] ?? '').toString());
       }
-      if (notes.isNotEmpty) {
+      if (includeNotes && notes.isNotEmpty) {
         notesSlideNums.add(slideNum);
         rels.addNotesSlide('../notesSlides/notesSlide$slideNum.xml');
         final notesXml = _buildNotesSlideXml(notes);
@@ -170,11 +219,13 @@ class PPTGenerator {
       slides.length,
       mediaExtensions: mediaExts,
       notesSlideNums: notesSlideNums,
+      hasNotesMaster: notesSlideNums.isNotEmpty,
     );
     _addTextFile(archive, '[Content_Types].xml', contentTypesXml);
 
     // 3. _rels/.rels
-    const dotRelsXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    const dotRelsXml =
+        '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
@@ -201,59 +252,86 @@ class PPTGenerator {
     _addTextFile(archive, 'docProps/app.xml', appXml);
 
     // 5. ppt/presentation.xml + rels
-    final presentationXml =
-        _buildPresentationXml(slides.length, widescreen: widescreen);
+    final presentationXml = _buildPresentationXml(
+      slides.length,
+      geometry: geometry,
+      hasNotesMaster: notesSlideNums.isNotEmpty,
+    );
     _addTextFile(archive, 'ppt/presentation.xml', presentationXml);
-    final presentationRelsXml = _buildPresentationRelsXml(slides.length);
+    final presentationRelsXml = _buildPresentationRelsXml(
+      slides.length,
+      hasNotesMaster: notesSlideNums.isNotEmpty,
+    );
     _addTextFile(
         archive, 'ppt/_rels/presentation.xml.rels', presentationRelsXml);
 
-    // 6. ppt/slideMaster/slideMaster1.xml + rels (layout + theme)
-    const slideMasterXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    // 6. ppt/slideMasters/slideMaster1.xml + rels (layout + theme)
+    const slideMasterXml =
+        '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
   <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>
   <p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>
   <p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>
 </p:sldMaster>''';
-    _addTextFile(archive, 'ppt/slideMaster/slideMaster1.xml', slideMasterXml);
-    const slideMasterRelsXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    _addTextFile(archive, 'ppt/slideMasters/slideMaster1.xml', slideMasterXml);
+    const slideMasterRelsXml =
+        '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
 </Relationships>''';
-    _addTextFile(archive, 'ppt/slideMaster/_rels/slideMaster1.xml.rels',
+    _addTextFile(archive, 'ppt/slideMasters/_rels/slideMaster1.xml.rels',
         slideMasterRelsXml);
 
     // 7. ppt/slideLayouts/slideLayout1.xml + rels (master)
-    const slideLayoutXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    const slideLayoutXml =
+        '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank">
   <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>
 </p:sldLayout>''';
     _addTextFile(archive, 'ppt/slideLayouts/slideLayout1.xml', slideLayoutXml);
-    const slideLayoutRelsXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    const slideLayoutRelsXml =
+        '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMaster/slideMaster1.xml"/>
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
 </Relationships>''';
     _addTextFile(archive, 'ppt/slideLayouts/_rels/slideLayout1.xml.rels',
         slideLayoutRelsXml);
 
     // 8. ppt/notesMasters/notesMaster1.xml + rels (theme)
-    const notesMasterXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    if (notesSlideNums.isNotEmpty) {
+      const notesMasterXml =
+          '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:notesMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>
+  <p:cSld><p:spTree>
+    <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+    <p:grpSpPr/>
+    <p:sp>
+      <p:nvSpPr><p:cNvPr id="2" name="Notes Placeholder"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>
+      <p:spPr><a:xfrm><a:off x="685800" y="4400550"/><a:ext cx="5486400" cy="3600450"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>
+      <p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></p:txBody>
+    </p:sp>
+  </p:spTree></p:cSld>
   <p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>
+  <p:notesStyle><a:lvl1pPr marL="0" algn="l"><a:defRPr sz="1200"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill><a:latin typeface="+mn-lt"/></a:defRPr></a:lvl1pPr></p:notesStyle>
 </p:notesMaster>''';
-    _addTextFile(archive, 'ppt/notesMasters/notesMaster1.xml', notesMasterXml);
-    const notesMasterRelsXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+      _addTextFile(
+          archive, 'ppt/notesMasters/notesMaster1.xml', notesMasterXml);
+      const notesMasterRelsXml =
+          '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme2.xml"/>
 </Relationships>''';
-    _addTextFile(archive, 'ppt/notesMasters/_rels/notesMaster1.xml.rels',
-        notesMasterRelsXml);
+      _addTextFile(archive, 'ppt/notesMasters/_rels/notesMaster1.xml.rels',
+          notesMasterRelsXml);
+    }
 
     // 9. ppt/theme/theme1.xml
     final themeXml = _buildThemeXml();
     _addTextFile(archive, 'ppt/theme/theme1.xml', themeXml);
+    if (notesSlideNums.isNotEmpty) {
+      _addTextFile(archive, 'ppt/theme/theme2.xml', themeXml);
+    }
 
     // 10. Slides + rels + media
     for (int i = 0; i < slideXmls.length; i++) {
@@ -269,13 +347,17 @@ class PPTGenerator {
 
     final encoder = ZipEncoder();
     final bytes = encoder.encode(archive);
-    return Uint8List.fromList(bytes ?? []);
+    if (bytes == null || bytes.isEmpty) {
+      throw StateError('Failed to encode the PPTX package');
+    }
+    return Uint8List.fromList(bytes);
   }
 
   static String _buildContentTypesXml(
     int count, {
     Set<String> mediaExtensions = const {},
     List<int> notesSlideNums = const [],
+    bool hasNotesMaster = false,
   }) {
     final buffer = StringBuffer();
     buffer.write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n');
@@ -283,8 +365,8 @@ class PPTGenerator {
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n');
     buffer.write(
         '  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n');
-    buffer.write(
-        '  <Default Extension="xml" ContentType="application/xml"/>\n');
+    buffer
+        .write('  <Default Extension="xml" ContentType="application/xml"/>\n');
     if (mediaExtensions.contains('png')) {
       buffer.write('  <Default Extension="png" ContentType="image/png"/>\n');
     }
@@ -297,13 +379,19 @@ class PPTGenerator {
     buffer.write(
         '  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>\n');
     buffer.write(
-        '  <Override PartName="/ppt/slideMaster/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>\n');
+        '  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>\n');
     buffer.write(
         '  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>\n');
-    buffer.write(
-        '  <Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>\n');
+    if (hasNotesMaster) {
+      buffer.write(
+          '  <Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>\n');
+    }
     buffer.write(
         '  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>\n');
+    if (hasNotesMaster) {
+      buffer.write(
+          '  <Override PartName="/ppt/theme/theme2.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>\n');
+    }
     buffer.write(
         '  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>\n');
     buffer.write(
@@ -321,55 +409,59 @@ class PPTGenerator {
     return buffer.toString();
   }
 
-  static String _buildPresentationXml(int count, {bool widescreen = true}) {
+  static String _buildPresentationXml(
+    int count, {
+    required _PptGeometry geometry,
+    bool hasNotesMaster = false,
+  }) {
     final buffer = StringBuffer();
     buffer.write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n');
     buffer.write(
         '<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">\n');
     buffer.write('  <p:sldMasterIdLst>\n');
-    buffer.write(
-        '    <p:sldMasterId id="2147483648" r:id="rId1"/>\n');
+    buffer.write('    <p:sldMasterId id="2147483648" r:id="rId1"/>\n');
     buffer.write('  </p:sldMasterIdLst>\n');
-    // Notes master (rId after all slides).
-    buffer.write('  <p:notesMasterIdLst>\n');
-    buffer.write('    <p:notesMasterId r:id="rId${count + 2}"/>\n');
-    buffer.write('  </p:notesMasterIdLst>\n');
+    if (hasNotesMaster) {
+      // Notes master relationship follows all slide relationships.
+      buffer.write('  <p:notesMasterIdLst>\n');
+      buffer.write('    <p:notesMasterId r:id="rId${count + 2}"/>\n');
+      buffer.write('  </p:notesMasterIdLst>\n');
+    }
     buffer.write('  <p:sldIdLst>\n');
     for (int i = 1; i <= count; i++) {
       final rId = i + 1; // rId1 is slideMaster, rId2+ are slides
       final sldId = 255 + i;
-      buffer.write(
-          '    <p:sldId id="$sldId" r:id="rId$rId"/>\n');
+      buffer.write('    <p:sldId id="$sldId" r:id="rId$rId"/>\n');
     }
     buffer.write('  </p:sldIdLst>\n');
-    if (widescreen) {
-      // 16:9 — 12192000 x 6858000 EMUs
-      buffer.write(
-          '  <p:sldSz cx="12192000" cy="6858000" type="screen16x9"/>\n');
-    } else {
-      // 4:3 — 9144000 x 6858000 EMUs
-      buffer.write(
-          '  <p:sldSz cx="9144000" cy="6858000" type="screen4x3"/>\n');
-    }
+    final preset = geometry.aspectRatio.pptxPreset;
+    final type = preset == null ? '' : ' type="$preset"';
+    buffer.write(
+        '  <p:sldSz cx="${geometry.width}" cy="${geometry.height}"$type/>\n');
     buffer.write('  <p:notesSz cx="6858000" cy="9144000"/>\n');
     buffer.write('</p:presentation>');
     return buffer.toString();
   }
 
-  static String _buildPresentationRelsXml(int count) {
+  static String _buildPresentationRelsXml(
+    int count, {
+    bool hasNotesMaster = false,
+  }) {
     final buffer = StringBuffer();
     buffer.write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n');
     buffer.write(
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n');
     buffer.write(
-        '  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMaster/slideMaster1.xml"/>\n');
+        '  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>\n');
     for (int i = 1; i <= count; i++) {
       final rId = i + 1;
       buffer.write(
           '  <Relationship Id="rId$rId" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide$i.xml"/>\n');
     }
-    buffer.write(
-        '  <Relationship Id="rId${count + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster" Target="notesMasters/notesMaster1.xml"/>\n');
+    if (hasNotesMaster) {
+      buffer.write(
+          '  <Relationship Id="rId${count + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster" Target="notesMasters/notesMaster1.xml"/>\n');
+    }
     buffer.write('</Relationships>');
     return buffer.toString();
   }
@@ -447,7 +539,9 @@ class PPTGenerator {
     Map<String, dynamic> slide,
     int slideNum,
     SlideEffect effect, {
-    bool widescreen = true,
+    required _PptGeometry geometry,
+    bool includeBackgrounds = true,
+    int? imageMaxWidth,
     int? autoAdvanceMs,
     _SlideRels? rels,
     List<_MediaFile>? media,
@@ -457,24 +551,31 @@ class PPTGenerator {
     final rawHtml = slide['htmlContent'] ?? '';
 
     final cleanTitle = _xmlEscape(rawTitle.toString());
-    // Single-pass HTML parse: reuse the DOM for content blocks, h2, and bg-color.
+    // Single-pass HTML parse. The first h2 is the dedicated subtitle and must
+    // not be emitted again as a body paragraph.
     final parsedDoc = html_parser.parse(rawHtml);
-    final parsed = parseHtmlContentFullFromDoc(parsedDoc, fallbackText: rawHtml);
-    final contentW = widescreen ? 11277600 : 8229600;
-
-    // Extract background color from data-bg-color attribute (regex on raw HTML — fast)
-    String? bgColor;
-    final bgColorRegExp = RegExp(r"""data-bg-color=["']([^"']+)["']""", caseSensitive: false);
-    final bgMatch = bgColorRegExp.firstMatch(rawHtml);
-    if (bgMatch != null) {
-      bgColor = bgMatch.group(1);
-    }
-
-    // Extract subtitle from h2 elements (reuse parsed DOM)
     String? subtitleText;
     final h2 = parsedDoc.querySelector('h2');
     if (h2 != null && h2.text.trim().isNotEmpty) {
       subtitleText = h2.text.trim();
+      h2.remove();
+    }
+    final parsed =
+        parseHtmlContentFullFromDoc(parsedDoc, fallbackText: rawHtml);
+    final contentW = geometry.contentWidth;
+
+    // Typed Slide.bgColor wins over the legacy HTML data attribute. Normalize
+    // values so srgbClr only ever receives six hexadecimal digits.
+    String? bgColor = cssColorToHex((slide['bgColor'] ?? '').toString());
+    if (bgColor == null) {
+      final bgColorRegExp = RegExp(
+        r"""data-bg-color=["']([^"']+)["']""",
+        caseSensitive: false,
+      );
+      final bgMatch = bgColorRegExp.firstMatch(rawHtml);
+      if (bgMatch != null) {
+        bgColor = cssColorToHex(bgMatch.group(1)!);
+      }
     }
 
     final b = StringBuffer();
@@ -482,21 +583,19 @@ class PPTGenerator {
     b.write(
         '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">\n');
 
-    // Transition (applied outside cSld per OOXML spec)
-    final transitionXml = _buildTransitionXml(effect, autoAdvanceMs: autoAdvanceMs);
-    if (transitionXml.isNotEmpty) {
-      b.write('  $transitionXml\n');
-    }
+    // CT_Slide requires cSld before transition, so the element is written
+    // after the common slide data below.
+    final transitionXml =
+        _buildTransitionXml(effect, autoAdvanceMs: autoAdvanceMs);
 
     b.write('  <p:cSld>\n');
 
     // Background fill (if bgColor is specified)
-    if (bgColor != null) {
-      final cleanBg = _xmlEscape(bgColor.replaceAll('#', ''));
+    if (includeBackgrounds && bgColor != null) {
       b.write('    <p:bg>\n');
       b.write('      <p:bgPr>\n');
       b.write('        <a:solidFill>\n');
-      b.write('          <a:srgbClr val="$cleanBg"/>\n');
+      b.write('          <a:srgbClr val="$bgColor"/>\n');
       b.write('        </a:solidFill>\n');
       b.write('        <a:effectLst/>\n');
       b.write('      </p:bgPr>\n');
@@ -513,7 +612,7 @@ class PPTGenerator {
     b.write(
         '        <p:nvSpPr><p:cNvPr id="2" name="Title 1"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>\n');
     b.write(
-        '        <p:spPr><a:xfrm><a:off x="$_contentX" y="274320"/><a:ext cx="$contentW" cy="1143000"/></a:xfrm><a:presetGeom geom="rect"><a:avLst/></a:presetGeom></p:spPr>\n');
+        '        <p:spPr><a:xfrm><a:off x="${geometry.contentX}" y="${geometry.titleY}"/><a:ext cx="$contentW" cy="${geometry.titleHeight}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>\n');
     b.write('        <p:txBody><a:bodyPr/><a:lstStyle/>\n');
     b.write(
         '          <a:p><a:r><a:rPr lang="en-US" sz="3600" b="1"/><a:t>$cleanTitle</a:t></a:r></a:p>\n');
@@ -525,53 +624,109 @@ class PPTGenerator {
       final cleanSubtitle = _xmlEscape(subtitleText);
       b.write('      <p:sp>\n');
       b.write(
-          '        <p:nvSpPr><p:cNvPr id="7" name="Subtitle 1"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="subTitle"/></p:nvPr></p:nvSpPr>\n');
+          '        <p:nvSpPr><p:cNvPr id="7" name="Subtitle 1"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr/></p:nvSpPr>\n');
       b.write(
-          '        <p:spPr><a:xfrm><a:off x="$_contentX" y="1371600"/><a:ext cx="$contentW" cy="457200"/></a:xfrm><a:presetGeom geom="rect"><a:avLst/></a:presetGeom></p:spPr>\n');
+          '        <p:spPr><a:xfrm><a:off x="${geometry.contentX}" y="${geometry.subtitleY}"/><a:ext cx="$contentW" cy="${geometry.subtitleHeight}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>\n');
       b.write('        <p:txBody><a:bodyPr/><a:lstStyle/>\n');
       b.write(
-          '          <a:p><a:r><a:rPr lang="en-US" sz="2400" i="1"/><a:t>$cleanSubtitle</a:t></a:r></a:p>\n');
+          '          <a:p><a:pPr><a:buNone/></a:pPr><a:r><a:rPr lang="en-US" sz="2400" i="1"/><a:t>$cleanSubtitle</a:t></a:r></a:p>\n');
       b.write('        </p:txBody>\n');
       b.write('      </p:sp>\n');
     }
 
     // --- Content shapes (simple vertical flow layout) ---
-    int y = subtitleText != null ? 1943100 : 1600200;
+    int y = subtitleText != null
+        ? geometry.contentTopWithSubtitle
+        : geometry.contentTopWithoutSubtitle;
     int shapeId = 10;
 
-    int advance(int estimatedHeight) {
-      final available = _contentBottom - y;
-      final h = estimatedHeight.clamp(360000, available > 360000 ? available : 360000);
-      final usedY = y;
-      if (y + h < _contentBottom) y += h + 91440;
-      return usedY;
+    int estimatedHeight(Map<String, dynamic> block) {
+      final type = block['type'] as String;
+      if (type == 'text') {
+        final runs = (block['paragraphs'] as List).cast<Map<String, String>>();
+        return 360000 * _groupRuns(runs, 'paragraphStart').length + 91440;
+      }
+      if (type == 'list') {
+        final runs = (block['items'] as List).cast<Map<String, String>>();
+        return 360000 * _groupRuns(runs, 'itemStart').length + 91440;
+      }
+      if (type == 'table') {
+        return 400000 * (block['rows'] as List).length;
+      }
+      if (type == 'image') {
+        final loaded = HtmlImageLoader.load(
+          (block['src'] ?? '').toString(),
+          maxWidth: imageMaxWidth,
+        );
+        if (loaded != null && loaded.width > 0) {
+          final scaledHeight = loaded.height * contentW / loaded.width;
+          return scaledHeight.round().clamp(360000, 3657600).toInt();
+        }
+      }
+      return 360000;
     }
 
-    for (final block in parsed) {
+    final layoutBlocks = parsed.where((block) {
+      final type = block['type'];
+      return type == 'text' ||
+          type == 'list' ||
+          type == 'table' ||
+          (type == 'image' &&
+              rels != null &&
+              media != null &&
+              nextMediaIndex != null);
+    }).toList();
+    const desiredGap = 91440;
+    final estimates = layoutBlocks.map(estimatedHeight).toList();
+    final contentStart = y;
+    final availableHeight = (geometry.contentBottom - contentStart)
+        .clamp(1, geometry.contentBottom)
+        .toInt();
+    final gapCount = layoutBlocks.isEmpty ? 0 : layoutBlocks.length - 1;
+    final gapLimit =
+        layoutBlocks.isEmpty ? 0 : availableHeight ~/ (layoutBlocks.length * 2);
+    final gap = desiredGap < gapLimit ? desiredGap : gapLimit;
+    final usableHeight = availableHeight - gap * gapCount;
+    final desiredHeight = estimates.fold<int>(0, (sum, value) => sum + value);
+    final targetHeight =
+        desiredHeight < usableHeight ? desiredHeight : usableHeight;
+    var allocatedHeight = 0;
+
+    for (int blockIndex = 0; blockIndex < layoutBlocks.length; blockIndex++) {
+      final block = layoutBlocks[blockIndex];
       final type = block['type'] as String;
+      final blockY = contentStart + allocatedHeight + gap * blockIndex;
+      final isLast = blockIndex == layoutBlocks.length - 1;
+      final blockHeight = isLast
+          ? targetHeight - allocatedHeight
+          : (estimates[blockIndex] * targetHeight / desiredHeight)
+              .floor()
+              .clamp(1, targetHeight - allocatedHeight)
+              .toInt();
+      allocatedHeight += blockHeight;
 
       if (type == 'text') {
-        final count = (block['paragraphs'] as List).length;
         _buildTextContentShape(b, block,
             shapeId: shapeId++,
-            x: _contentX,
-            y: advance(360000 * count + 91440),
+            x: geometry.contentX,
+            y: blockY,
+            h: blockHeight,
             w: contentW,
             rels: rels);
       } else if (type == 'list') {
-        final count = (block['items'] as List).length;
         _buildListContentShape(b, block,
             shapeId: shapeId++,
-            x: _contentX,
-            y: advance(360000 * count + 91440),
+            x: geometry.contentX,
+            y: blockY,
+            h: blockHeight,
             w: contentW,
             rels: rels);
       } else if (type == 'table') {
-        final count = (block['rows'] as List).length;
         _buildTableShape(b, block,
             shapeId: shapeId++,
-            x: _contentX,
-            y: advance(400000 * count),
+            x: geometry.contentX,
+            y: blockY,
+            h: blockHeight,
             w: contentW);
       } else if (type == 'image' &&
           rels != null &&
@@ -579,9 +734,11 @@ class PPTGenerator {
           nextMediaIndex != null) {
         _buildImageShape(b, block,
             shapeId: shapeId++,
-            x: _contentX,
-            yProvider: advance,
+            x: geometry.contentX,
+            y: blockY,
+            h: blockHeight,
             w: contentW,
+            imageMaxWidth: imageMaxWidth,
             rels: rels,
             media: media,
             nextMediaIndex: nextMediaIndex);
@@ -590,6 +747,9 @@ class PPTGenerator {
 
     b.write('    </p:spTree>\n');
     b.write('  </p:cSld>\n');
+    if (transitionXml.isNotEmpty) {
+      b.write('  $transitionXml\n');
+    }
     b.write('</p:sld>');
     return b.toString();
   }
@@ -600,14 +760,16 @@ class PPTGenerator {
     Map<String, dynamic> block, {
     required int shapeId,
     required int x,
-    required int Function(int) yProvider,
+    required int y,
+    required int h,
     required int w,
+    int? imageMaxWidth,
     required _SlideRels rels,
     required List<_MediaFile> media,
     required int Function() nextMediaIndex,
   }) {
     final src = (block['src'] ?? '').toString();
-    final loaded = HtmlImageLoader.load(src);
+    final loaded = HtmlImageLoader.load(src, maxWidth: imageMaxWidth);
     if (loaded == null) return;
 
     final index = nextMediaIndex();
@@ -618,12 +780,10 @@ class PPTGenerator {
     // Scale to fit the content width and remaining vertical space.
     int imgW = loaded.width * _emuPerPx;
     int imgH = loaded.height * _emuPerPx;
-    final y = yProvider(imgH);
-    final availH = (_contentBottom - y).clamp(914400, 6858000);
     final scale = [
       1.0,
       w / imgW,
-      availH / imgH,
+      h / imgH,
     ].reduce((a, c) => a < c ? a : c);
     imgW = (imgW * scale).round();
     imgH = (imgH * scale).round();
@@ -639,6 +799,56 @@ class PPTGenerator {
     b.write('      </p:pic>\n');
   }
 
+  /// Group consecutive inline runs into semantic paragraphs/list items.
+  ///
+  /// The public parser keeps returning flat run maps for backward
+  /// compatibility. Internal marker keys preserve the HTML block boundaries
+  /// so rich inline markup is not incorrectly emitted as separate paragraphs.
+  static List<List<Map<String, String>>> _groupRuns(
+    List<Map<String, String>> runs,
+    String startMarker,
+  ) {
+    final groups = <List<Map<String, String>>>[];
+    for (final run in runs) {
+      if (groups.isEmpty || run[startMarker] == 'true') {
+        groups.add(<Map<String, String>>[]);
+      }
+      groups.last.add(run);
+    }
+    return groups;
+  }
+
+  static List<Map<String, String>> _prepareRunGroup(
+    List<Map<String, String>> runs,
+    String startMarker,
+  ) {
+    final prepared = runs.map(Map<String, String>.from).toList();
+    if (prepared.isEmpty) return prepared;
+
+    // HTML collapses normal whitespace. Preserve a single boundary space
+    // between differently styled runs, but not at paragraph edges.
+    for (final run in prepared) {
+      if (run['isBreak'] != 'true') {
+        run['text'] = (run['text'] ?? '').replaceAll(RegExp(r'\s+'), ' ');
+      }
+    }
+    final textRuns = prepared.where((run) => run['isBreak'] != 'true').toList();
+    if (textRuns.isNotEmpty) {
+      textRuns.first['text'] = (textRuns.first['text'] ?? '').trimLeft();
+      textRuns.last['text'] = (textRuns.last['text'] ?? '').trimRight();
+    }
+    prepared.removeWhere(
+      (run) => run['isBreak'] != 'true' && (run['text'] ?? '').isEmpty,
+    );
+    if (prepared.isNotEmpty) prepared.first[startMarker] = 'true';
+    return prepared;
+  }
+
+  static String _textElement(String text) {
+    final preserve = text != text.trim() ? ' xml:space="preserve"' : '';
+    return '<a:t$preserve>${_xmlEscape(text)}</a:t>';
+  }
+
   /// Build a simple text content shape
   static void _buildTextContentShape(
     StringBuffer b,
@@ -646,21 +856,23 @@ class PPTGenerator {
     int shapeId = 4,
     int x = 457200,
     int y = 1600200,
+    int h = 4525963,
     int w = 8229600,
     _SlideRels? rels,
   }) {
-    final paragraphs = (block['paragraphs'] as List).cast<Map<String, String>>();
+    final paragraphs =
+        (block['paragraphs'] as List).cast<Map<String, String>>();
     if (paragraphs.isEmpty) return;
 
     b.write('      <p:sp>\n');
     b.write(
-        '        <p:nvSpPr><p:cNvPr id="$shapeId" name="Content Text"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph idx="1"/></p:nvPr></p:nvSpPr>\n');
+        '        <p:nvSpPr><p:cNvPr id="$shapeId" name="Content Text"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr/></p:nvSpPr>\n');
     b.write(
-        '        <p:spPr><a:xfrm><a:off x="$x" y="$y"/><a:ext cx="$w" cy="4525963"/></a:xfrm><a:presetGeom geom="rect"><a:avLst/></a:presetGeom></p:spPr>\n');
+        '        <p:spPr><a:xfrm><a:off x="$x" y="$y"/><a:ext cx="$w" cy="$h"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>\n');
     b.write('        <p:txBody><a:bodyPr/><a:lstStyle/>\n');
 
-    for (final para in paragraphs) {
-      _writeParagraph(b, para, indentLevel: 0, rels: rels);
+    for (final paraRuns in _groupRuns(paragraphs, 'paragraphStart')) {
+      _writeParagraphRuns(b, paraRuns, indentLevel: 0, rels: rels);
     }
 
     b.write('        </p:txBody>\n');
@@ -674,6 +886,7 @@ class PPTGenerator {
     int shapeId = 5,
     int x = 457200,
     int y = 1600200,
+    int h = 4525963,
     int w = 8229600,
     _SlideRels? rels,
   }) {
@@ -683,29 +896,34 @@ class PPTGenerator {
 
     b.write('      <p:sp>\n');
     b.write(
-        '        <p:nvSpPr><p:cNvPr id="$shapeId" name="List Content"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph idx="1"/></p:nvPr></p:nvSpPr>\n');
+        '        <p:nvSpPr><p:cNvPr id="$shapeId" name="List Content"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr/></p:nvSpPr>\n');
     b.write(
-        '        <p:spPr><a:xfrm><a:off x="$x" y="$y"/><a:ext cx="$w" cy="4525963"/></a:xfrm><a:presetGeom geom="rect"><a:avLst/></a:presetGeom></p:spPr>\n');
+        '        <p:spPr><a:xfrm><a:off x="$x" y="$y"/><a:ext cx="$w" cy="$h"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>\n');
     b.write('        <p:txBody><a:bodyPr/><a:lstStyle/>\n');
 
-    for (int i = 0; i < items.length; i++) {
-      final item = items[i];
+    final itemGroups = _groupRuns(items, 'itemStart');
+    for (int i = 0; i < itemGroups.length; i++) {
+      final itemRuns = itemGroups[i];
 
       b.write('          <a:p>\n');
       b.write('            <a:pPr marL="457200" indent="-228600"');
-      final align = item['align'];
+      final align = itemRuns
+          .map((run) => run['align'])
+          .whereType<String>()
+          .where((value) => value.isNotEmpty)
+          .firstOrNull;
       if (align != null && align.isNotEmpty) b.write(' algn="$align"');
       if (ordered) {
         // Numbered list
-        b.write('><a:buAutoNum type="arabicPeriod" startAt="${i + 1}"/></a:pPr>\n');
+        b.write(
+            '><a:buAutoNum type="arabicPeriod" startAt="${i + 1}"/></a:pPr>\n');
       } else {
         // Bullet list — actual bullet glyph (fixed literal \u2022 bug)
         b.write('><a:buChar char="\u2022"/></a:pPr>\n');
       }
-      b.write('            <a:r>\n');
-      b.write('              ${_runProps(item, defaultSize: '1800', rels: rels)}\n');
-      b.write('              <a:t>${_xmlEscape(item['text'] ?? '')}</a:t>\n');
-      b.write('            </a:r>\n');
+      for (final run in itemRuns) {
+        _writeTextRun(b, run, rels: rels, indent: '            ');
+      }
       b.write('          </a:p>\n');
     }
 
@@ -720,6 +938,7 @@ class PPTGenerator {
     int shapeId = 6,
     int x = 457200,
     int y = 1600200,
+    int? h,
     int w = 8229600,
   }) {
     final rowsDynamic = block['rows'] as List?;
@@ -736,19 +955,20 @@ class PPTGenerator {
       rows.add(typedRow);
     }
 
-    final cols = rows
-        .fold<int>(0, (max, row) => row.length > max ? row.length : max);
+    final cols =
+        rows.fold<int>(0, (max, row) => row.length > max ? row.length : max);
     if (cols == 0) return;
+    final rowHeight = ((h ?? rows.length * 400000) / rows.length).floor();
+    final tableHeight = rowHeight * rows.length;
 
     b.write('      <p:graphicFrame>\n');
     b.write(
         '        <p:nvGraphicFramePr><p:cNvPr id="$shapeId" name="Table"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>\n');
     b.write(
-        '        <p:xfrm><a:off x="$x" y="$y"/><a:ext cx="$w" cy="${rows.length * 400000}"/></p:xfrm>\n');
+        '        <p:xfrm><a:off x="$x" y="$y"/><a:ext cx="$w" cy="$tableHeight"/></p:xfrm>\n');
     b.write(
         '        <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">\n');
-    b.write(
-        '          <a:tbl><a:tblPr/><a:tblGrid>\n');
+    b.write('          <a:tbl><a:tblPr/><a:tblGrid>\n');
 
     for (int c = 0; c < cols; c++) {
       b.write('            <a:gridCol w="${(w / cols).round()}"/>\n');
@@ -758,7 +978,7 @@ class PPTGenerator {
 
     for (int r = 0; r < rows.length; r++) {
       final isHeader = block['headerRow'] == true && r == 0;
-      b.write('          <a:tr h="400000">\n');
+      b.write('          <a:tr h="$rowHeight">\n');
       for (int c = 0; c < cols; c++) {
         final cell = c < rows[r].length
             ? rows[r][c]
@@ -831,43 +1051,64 @@ class PPTGenerator {
     }
     if (href != null && href.isNotEmpty && rels != null) {
       final rId = rels.addHyperlink(_xmlEscape(href));
-      b.write('<a:hlinkClick xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="$rId"/>');
+      b.write(
+          '<a:hlinkClick xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="$rId"/>');
     }
     b.write('</a:rPr>');
     return b.toString();
   }
 
-  /// Write a single paragraph run into a text body
-  static void _writeParagraph(
+  static void _writeParagraphRuns(
     StringBuffer b,
-    Map<String, String> para, {
+    List<Map<String, String>> runs, {
     int indentLevel = 0,
     _SlideRels? rels,
   }) {
-    final text = para['text'] ?? '';
-    final isBreak = para['isBreak'] == 'true';
-
-    if (text.isEmpty && !isBreak) return;
+    final visibleRuns = runs
+        .where(
+            (run) => run['isBreak'] == 'true' || (run['text'] ?? '').isNotEmpty)
+        .toList();
+    if (visibleRuns.isEmpty) return;
 
     b.write('          <a:p>\n');
-    final align = para['align'];
-    if (indentLevel > 0 || (align != null && align.isNotEmpty)) {
-      b.write('            <a:pPr');
-      if (indentLevel > 0) {
-        b.write(' marL="${indentLevel * 457200}" indent="-228600"');
-      }
-      if (align != null && align.isNotEmpty) b.write(' algn="$align"');
-      b.write('/>\n');
+    final align = visibleRuns
+        .map((run) => run['align'])
+        .whereType<String>()
+        .where((value) => value.isNotEmpty)
+        .firstOrNull;
+    b.write('            <a:pPr');
+    if (indentLevel > 0) {
+      b.write(' marL="${indentLevel * 457200}" indent="-228600"');
     }
-    b.write('            <a:r>\n');
-    b.write('              ${_runProps(para, defaultSize: '1800', rels: rels)}\n');
-    if (isBreak) {
-      b.write('              <a:br/>\n');
-    } else {
-      b.write('              <a:t>${_xmlEscape(text)}</a:t>\n');
+    if (align != null && align.isNotEmpty) b.write(' algn="$align"');
+    b.write('><a:buNone/></a:pPr>\n');
+    for (final run in visibleRuns) {
+      _writeTextRun(b, run, rels: rels, indent: '            ');
     }
-    b.write('            </a:r>\n');
     b.write('          </a:p>\n');
+  }
+
+  static void _writeTextRun(
+    StringBuffer b,
+    Map<String, String> run, {
+    _SlideRels? rels,
+    required String indent,
+  }) {
+    if (run['isBreak'] == 'true') {
+      // a:br is a direct child of a:p. Placing it inside a:r violates
+      // CT_RegularTextRun and causes PowerPoint/OpenXmlValidator to reject it.
+      b.write('$indent<a:br>\n');
+      b.write('$indent  ${_runProps(run, defaultSize: '1800', rels: rels)}\n');
+      b.write('$indent</a:br>\n');
+      return;
+    }
+
+    final text = run['text'] ?? '';
+    if (text.isEmpty) return;
+    b.write('$indent<a:r>\n');
+    b.write('$indent  ${_runProps(run, defaultSize: '1800', rels: rels)}\n');
+    b.write('$indent  ${_textElement(text)}\n');
+    b.write('$indent</a:r>\n');
   }
 
   // ---- HTML parsing ----
@@ -939,11 +1180,20 @@ class PPTGenerator {
     final paragraphs = <Map<String, String>>[];
     for (final block in blocks) {
       if (block['type'] == 'text') {
-        paragraphs.addAll(
-            (block['paragraphs'] as List).cast<Map<String, String>>());
+        for (final run
+            in (block['paragraphs'] as List).cast<Map<String, String>>()) {
+          final legacyRun = Map<String, String>.from(run)
+            ..remove('paragraphStart')
+            ..remove('itemStart');
+          paragraphs.add(legacyRun);
+        }
       } else if (block['type'] == 'list') {
-        for (final item in (block['items'] as List).cast<Map<String, String>>()) {
-          paragraphs.add(item);
+        for (final item
+            in (block['items'] as List).cast<Map<String, String>>()) {
+          final legacyItem = Map<String, String>.from(item)
+            ..remove('paragraphStart')
+            ..remove('itemStart');
+          paragraphs.add(legacyItem);
         }
       }
     }
@@ -1053,7 +1303,11 @@ class PPTGenerator {
             if (sz != null) merged['size'] = sz;
             break;
           case 'font-family':
-            final family = value.split(',').first.trim().replaceAll(RegExp(r'''["']'''), '');
+            final family = value
+                .split(',')
+                .first
+                .trim()
+                .replaceAll(RegExp(r'''["']'''), '');
             if (family.isNotEmpty) merged['font'] = family;
             break;
           case 'font-weight':
@@ -1106,7 +1360,8 @@ class PPTGenerator {
       if (style['underline'] == 'true') 'underline': 'true',
       if (style['strike'] == 'true') 'strike': 'true',
       if ((style['color'] ?? '').isNotEmpty) 'color': style['color']!,
-      if ((style['highlight'] ?? '').isNotEmpty) 'highlight': style['highlight']!,
+      if ((style['highlight'] ?? '').isNotEmpty)
+        'highlight': style['highlight']!,
       if ((style['size'] ?? '').isNotEmpty) 'size': style['size']!,
       if ((style['font'] ?? '').isNotEmpty) 'font': style['font']!,
       if ((style['align'] ?? '').isNotEmpty) 'align': style['align']!,
@@ -1122,7 +1377,6 @@ class PPTGenerator {
     List<Map<String, String>> currentListItems = [];
     bool currentListOrdered = false;
     bool inList = false;
-    bool headerRow = true;
 
     void flushParagraphs() {
       if (currentParagraphs.isNotEmpty) {
@@ -1148,14 +1402,17 @@ class PPTGenerator {
 
     for (final node in element.nodes) {
       if (node is dom.Text) {
-        final trimmed = node.text.trim();
-        if (trimmed.isNotEmpty) {
-          final run = _makeRun(trimmed, inheritedStyle);
-          if (inList) {
-            currentListItems.add(run);
-          } else {
-            currentParagraphs.add(run);
-          }
+        final normalized = node.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+        if (normalized.isNotEmpty) {
+          // A bare text node appearing after a list must NOT inherit the
+          // inList state (rare in well-formed HTML, but a body like
+          // `<ul>...</ul>loose text` would otherwise merge "loose text"
+          // into the trailing list). Flush the list first so the text
+          // lands in the paragraphs stream.
+          if (inList) flushList();
+          final run = _makeRun(normalized, inheritedStyle);
+          if (currentParagraphs.isEmpty) run['paragraphStart'] = 'true';
+          currentParagraphs.add(run);
         }
       } else if (node is dom.Element) {
         final tag = node.localName;
@@ -1164,8 +1421,12 @@ class PPTGenerator {
         if (tag == 'br') {
           final run = _makeRun('', inheritedStyle, isBreak: true);
           if (inList) {
+            if (currentListItems.isEmpty) run['itemStart'] = 'true';
             currentListItems.add(run);
           } else {
+            if (currentParagraphs.isEmpty) {
+              run['paragraphStart'] = 'true';
+            }
             currentParagraphs.add(run);
           }
         } else if (tag == 'img') {
@@ -1175,20 +1436,30 @@ class PPTGenerator {
           if (src.isNotEmpty) {
             result.add({'type': 'image', 'src': src});
           }
-        } else if (tag == 'p' || tag == 'div' || tag == 'h1' ||
-            tag == 'h2' || tag == 'h3' || tag == 'h4' || tag == 'h5' ||
+        } else if (tag == 'p' ||
+            tag == 'div' ||
+            tag == 'h1' ||
+            tag == 'h2' ||
+            tag == 'h3' ||
+            tag == 'h4' ||
+            tag == 'h5' ||
             tag == 'h6') {
           flushList();
           // Nested block content (images, lists, tables inside div/p).
           final hasBlockChildren = node.children.any((c) => const [
-                'img', 'ul', 'ol', 'table', 'p', 'div'
+                'img',
+                'ul',
+                'ol',
+                'table',
+                'p',
+                'div'
               ].contains(c.localName));
           if ((tag == 'div' || tag == 'p') && hasBlockChildren) {
             flushParagraphs();
             result.addAll(_extractBlocks(node, style));
             continue;
           }
-          final subPars = _extractInlineParagraphs(node, style);
+          var subPars = _extractInlineParagraphs(node, style);
           if (subPars.isNotEmpty) {
             // For headings, make them bold
             if (tag != null && tag.startsWith('h')) {
@@ -1197,6 +1468,7 @@ class PPTGenerator {
                 p['italic'] = p['italic'] ?? 'false';
               }
             }
+            subPars = _prepareRunGroup(subPars, 'paragraphStart');
             currentParagraphs.addAll(subPars);
           }
         } else if (tag == 'ul' || tag == 'ol') {
@@ -1207,7 +1479,10 @@ class PPTGenerator {
           for (final child in node.nodes) {
             if (child is dom.Element && child.localName == 'li') {
               final liStyle = _mergeElementStyle(child, style);
-              final items = _extractInlineParagraphs(child, liStyle);
+              final items = _prepareRunGroup(
+                _extractInlineParagraphs(child, liStyle),
+                'itemStart',
+              );
               for (final item in items) {
                 currentListItems.add(item);
               }
@@ -1221,13 +1496,20 @@ class PPTGenerator {
             result.add({
               'type': 'table',
               'rows': tableData,
-              'headerRow': headerRow,
+              'headerRow': node.querySelector('tr th') != null,
             });
-            headerRow = false;
           }
         } else if (tag == 'strong' || tag == 'b') {
-          for (final child in _extractInlineParagraphs(
-              node, {...style, 'bold': 'true'})) {
+          var children = _extractInlineParagraphs(
+            node,
+            {...style, 'bold': 'true'},
+          );
+          if (inList && currentListItems.isEmpty) {
+            children = _prepareRunGroup(children, 'itemStart');
+          } else if (!inList && currentParagraphs.isEmpty) {
+            children = _prepareRunGroup(children, 'paragraphStart');
+          }
+          for (final child in children) {
             if (inList) {
               currentListItems.add(child);
             } else {
@@ -1235,8 +1517,16 @@ class PPTGenerator {
             }
           }
         } else if (tag == 'em' || tag == 'i') {
-          for (final child in _extractInlineParagraphs(
-              node, {...style, 'italic': 'true'})) {
+          var children = _extractInlineParagraphs(
+            node,
+            {...style, 'italic': 'true'},
+          );
+          if (inList && currentListItems.isEmpty) {
+            children = _prepareRunGroup(children, 'itemStart');
+          } else if (!inList && currentParagraphs.isEmpty) {
+            children = _prepareRunGroup(children, 'paragraphStart');
+          }
+          for (final child in children) {
             if (inList) {
               currentListItems.add(child);
             } else {
@@ -1248,8 +1538,8 @@ class PPTGenerator {
           final subBlocks = _extractBlocks(node, style);
           for (final block in subBlocks) {
             if (block['type'] == 'text') {
-              currentParagraphs
-                  .addAll((block['paragraphs'] as List).cast<Map<String, String>>());
+              currentParagraphs.addAll(
+                  (block['paragraphs'] as List).cast<Map<String, String>>());
             } else if (block['type'] == 'list' ||
                 block['type'] == 'image' ||
                 block['type'] == 'table') {
@@ -1267,14 +1557,14 @@ class PPTGenerator {
   }
 
   /// Extract inline paragraphs from an element (text leaves only)
-  static List<Map<String, String>> _extractInlineParagraphs(
-      dom.Element element, [Map<String, String> inheritedStyle = const {}]) {
+  static List<Map<String, String>> _extractInlineParagraphs(dom.Element element,
+      [Map<String, String> inheritedStyle = const {}]) {
     final result = <Map<String, String>>[];
     for (final node in element.nodes) {
       if (node is dom.Text) {
-        final trimmed = node.text.trim();
-        if (trimmed.isNotEmpty) {
-          result.add(_makeRun(trimmed, inheritedStyle));
+        final normalized = node.text.replaceAll(RegExp(r'\s+'), ' ');
+        if (normalized.trim().isNotEmpty) {
+          result.add(_makeRun(normalized, inheritedStyle));
         }
       } else if (node is dom.Element) {
         final tag = node.localName;
@@ -1359,9 +1649,8 @@ class PPTGenerator {
 
   /// Builds the `<p:transition>` element for [effect].
   ///
-  /// [autoAdvanceMs] (milliseconds) adds `<p:advTm val="..."/>` so PowerPoint
-  /// advances slides automatically after that time (works even when there is
-  /// no visual transition).
+  /// [autoAdvanceMs] (milliseconds) sets the transition's `advTm` attribute so
+  /// PowerPoint advances automatically (even without a visual transition).
   static String _buildTransitionXml(SlideEffect effect, {int? autoAdvanceMs}) {
     // OOXML-compliant transition: spd on parent, no dur on child
     final String type;
@@ -1402,13 +1691,13 @@ class PPTGenerator {
         type = 'randomBar';
         break;
       case SlideEffect.checkerboard:
-        type = 'checkerboard';
+        type = 'checker';
         break;
       case SlideEffect.blinds:
         type = 'blinds';
         break;
       case SlideEffect.clock:
-        type = 'clock';
+        type = 'wheel';
         break;
       case SlideEffect.zoom:
         type = 'zoom';
@@ -1438,7 +1727,8 @@ class PPTGenerator {
         type = 'zoom';
         break;
       case SlideEffect.swivel:
-        type = 'rotate';
+        // ISO PresentationML has no rotate transition.
+        type = 'fade';
         break;
       case SlideEffect.boomerang:
         type = 'push';
@@ -1477,20 +1767,20 @@ class PPTGenerator {
       default:
         // No visual transition — still emit timing when requested.
         if (autoAdvanceMs != null && autoAdvanceMs > 0) {
-          return '<p:transition spd="slow" advClick="1"><p:advTm val="$autoAdvanceMs"/></p:transition>';
+          return '<p:transition spd="slow" advClick="1" advTm="$autoAdvanceMs"/>';
         }
         return '';
     }
 
-    String xml = '<p:transition spd="slow" advClick="1">';
+    final timing = autoAdvanceMs != null && autoAdvanceMs > 0
+        ? ' advTm="$autoAdvanceMs"'
+        : '';
+    String xml = '<p:transition spd="slow" advClick="1"$timing>';
     xml += '<p:$type';
     if (subtype != null) {
       xml += ' dir="$subtype"';
     }
     xml += '/>';
-    if (autoAdvanceMs != null && autoAdvanceMs > 0) {
-      xml += '<p:advTm val="$autoAdvanceMs"/>';
-    }
     xml += '</p:transition>';
     return xml;
   }

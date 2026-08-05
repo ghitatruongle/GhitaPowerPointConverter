@@ -178,7 +178,7 @@ class _LayoutCard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Text(
                 layout.name,
-                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w500),
+                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500),
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

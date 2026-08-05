@@ -1,10 +1,10 @@
-# Ghita PPT Converter v1.0.2
+# Ghita PPT Converter v1.6.0+1
 
 Flutter application for creating PowerPoint presentations with HTML support and AI-powered content generation.
 
 ## Version
-- **Current version:** `1.0.2+3`
-- **Git tag:** `v1.0.2`
+- **Current version:** `1.6.0+1`
+- **Release status:** Internal build (no release commit/tag yet)
 
 ## Features
 
@@ -150,6 +150,35 @@ flutter test
 ### Building for Release
 ```bash
 flutter build windows --release
+```
+
+### Building the Windows installer
+
+Install Inno Setup 6, then run the installer builder after a successful
+Windows Release build:
+
+```powershell
+./installer/build_installer.ps1 -Clean
+```
+
+It produces a per-user x64 installer plus a SHA-256 checksum and release
+metadata JSON in `installer/output/`. Version data is read from `pubspec.yaml`,
+and the manifest records the source revision, dirty-tree state, hashes, and
+Authenticode status. The installer intentionally preserves user projects and
+settings when it is uninstalled.
+
+Verify the resulting package, including a silent install/uninstall smoke test:
+
+```powershell
+./installer/verify_release.ps1 -SmokeInstall -SmokeLaunch
+```
+
+For an externally distributed release, sign both the application and installer
+with an installed code-signing certificate:
+
+```powershell
+./installer/build_installer.ps1 -Clean -SigningCertificateThumbprint "CERT_THUMBPRINT"
+./installer/verify_release.ps1 -SmokeInstall -SmokeLaunch -RequireSignature
 ```
 
 ## What's New in v0.7.2

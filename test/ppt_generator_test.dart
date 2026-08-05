@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ghita_ppt_converter/models/export_options.dart';
 import 'package:ghita_ppt_converter/models/slide.dart';
 import 'package:ghita_ppt_converter/services/ppt_generator.dart';
 import 'package:xml/xml.dart' as xml;
@@ -83,8 +84,8 @@ void main() {
       expect(r.where((p) => (p['text'] ?? '').isNotEmpty), hasLength(2));
     });
     test('unordered list items preserved', () {
-      final r =
-          PPTGenerator.parseHtmlContent('<ul><li>Item A</li><li>Item B</li></ul>');
+      final r = PPTGenerator.parseHtmlContent(
+          '<ul><li>Item A</li><li>Item B</li></ul>');
       expect(r.where((p) => (p['text'] ?? '').contains('Item')), hasLength(2));
     });
     test('empty input returns fallback', () {
@@ -94,8 +95,8 @@ void main() {
   });
   group('parseHtmlContentFull - structured blocks', () {
     test('detects list blocks', () {
-      final blocks =
-          PPTGenerator.parseHtmlContentFull('<ul><li>One</li><li>Two</li></ul>');
+      final blocks = PPTGenerator.parseHtmlContentFull(
+          '<ul><li>One</li><li>Two</li></ul>');
       expect(blocks.any((b) => b['type'] == 'list'), isTrue);
       final listBlock = blocks.firstWhere((b) => b['type'] == 'list');
       expect((listBlock['items'] as List).length, 2);
@@ -114,6 +115,16 @@ void main() {
     });
   });
   group('generatePPT - file creation', () {
+    test('rejects an empty presentation instead of writing a corrupt package',
+        () async {
+      final f = File('$tmpDir/test_empty_ppt.pptx');
+      await expectLater(
+        PPTGenerator.generatePPT(const [], f.path),
+        throwsA(isA<Exception>()),
+      );
+      expect(f.existsSync(), isFalse);
+    });
+
     test('generates non-empty PPTX file with 16:9 default', () async {
       final f = File('$tmpDir/test_ppt.pptx');
       final slides = [
@@ -162,9 +173,181 @@ void main() {
       expect(file.lengthSync(), greaterThan(0));
       f.deleteSync();
     });
+
+    test('honors portrait dimensions and advanced include flags', () async {
+      final f = File('$tmpDir/test_ppt_portrait_options.pptx');
+      final file = await PPTGenerator.generatePPT(
+        [
+          {
+            'title': 'Portrait',
+            'bgColor': '#123456',
+            'notes': 'Do not include this note',
+            'htmlContent': '<p>Content</p>',
+          }
+        ],
+        f.path,
+        aspectRatio: ExportAspectRatio.portrait9x16,
+        includeNotes: false,
+        includeBackgrounds: false,
+      );
+      final parts = readPptxParts(file);
+
+      expect(parts['ppt/presentation.xml'],
+          contains('<p:sldSz cx="5143500" cy="9144000"/>'));
+      expect(parts['ppt/slides/slide1.xml'], isNot(contains('<p:bg>')));
+      expect(parts.keys, isNot(contains('ppt/notesSlides/notesSlide1.xml')));
+      expect(parts.keys, isNot(contains('ppt/notesMasters/notesMaster1.xml')));
+      file.deleteSync();
+    });
   });
 
   group('v0.3.0 regressions - XML validity', () {
+    test('uses schema-valid geometry and slide child order', () async {
+      final parts = await generateParts(
+        [
+          {
+            'title': 'Schema',
+            'htmlContent': '<h2>Subtitle</h2><p>Body</p>',
+          }
+        ],
+        effect: SlideEffect.fade,
+      );
+      final slideXml = parts['ppt/slides/slide1.xml']!;
+
+      expect(slideXml, contains('<a:prstGeom prst="rect">'));
+      expect(slideXml, isNot(contains('<a:presetGeom')));
+      expect(slideXml.indexOf('<p:cSld>'),
+          lessThan(slideXml.indexOf('<p:transition')));
+      expect('<a:t>Subtitle</a:t>'.allMatches(slideXml), hasLength(1));
+      expect(slideXml, isNot(contains('<p:ph type="subTitle"')));
+    });
+
+    test('keeps inline formatting and line breaks in one paragraph', () async {
+      final parts = await generateParts([
+        {
+          'title': 'Runs',
+          'htmlContent':
+              '<p>Hello <strong>bold</strong>, <em>italic</em><br>next line</p>',
+        }
+      ]);
+      final document = xml.XmlDocument.parse(parts['ppt/slides/slide1.xml']!);
+      final contentShape = document.descendants
+          .whereType<xml.XmlElement>()
+          .firstWhere((element) =>
+              element.name.local == 'sp' &&
+              element.descendants.whereType<xml.XmlElement>().any((child) =>
+                  child.name.local == 'cNvPr' &&
+                  child.getAttribute('name') == 'Content Text'));
+      final paragraphs = contentShape.descendants
+          .whereType<xml.XmlElement>()
+          .where((element) => element.name.local == 'p')
+          .toList();
+
+      expect(paragraphs, hasLength(1));
+      expect(
+        paragraphs.single.descendants
+            .whereType<xml.XmlElement>()
+            .where((element) => element.name.local == 'buNone'),
+        hasLength(1),
+      );
+      expect(
+        paragraphs.single.children
+            .whereType<xml.XmlElement>()
+            .where((element) => element.name.local == 'br'),
+        hasLength(1),
+      );
+      expect(
+        paragraphs.single.descendants
+            .whereType<xml.XmlElement>()
+            .where((element) => element.name.local == 't')
+            .map((element) => element.innerText)
+            .join(),
+        'Hello bold, italicnext line',
+      );
+      expect(parts['ppt/slides/slide1.xml'], contains('xml:space="preserve"'));
+    });
+
+    test('keeps styled list runs in their original list item', () async {
+      final parts = await generateParts([
+        {
+          'title': 'List runs',
+          'htmlContent':
+              '<ul><li>First <strong>bold</strong> item</li><li>Second</li></ul>',
+        }
+      ]);
+      final document = xml.XmlDocument.parse(parts['ppt/slides/slide1.xml']!);
+      final listShape = document.descendants
+          .whereType<xml.XmlElement>()
+          .firstWhere((element) =>
+              element.name.local == 'sp' &&
+              element.descendants.whereType<xml.XmlElement>().any((child) =>
+                  child.name.local == 'cNvPr' &&
+                  child.getAttribute('name') == 'List Content'));
+      final paragraphs = listShape.descendants
+          .whereType<xml.XmlElement>()
+          .where((element) => element.name.local == 'p')
+          .toList();
+
+      expect(paragraphs, hasLength(2));
+      expect(
+        paragraphs.first.descendants
+            .whereType<xml.XmlElement>()
+            .where((element) => element.name.local == 't')
+            .map((element) => element.innerText)
+            .join(),
+        'First bold item',
+      );
+      expect(
+        paragraphs.first.descendants.whereType<xml.XmlElement>().where(
+            (element) =>
+                element.name.local == 'rPr' &&
+                element.getAttribute('b') == '1'),
+        isNotEmpty,
+      );
+    });
+
+    test('lays out consecutive content blocks without overlap', () async {
+      final parts = await generateParts([
+        {
+          'title': 'Flow',
+          'htmlContent': '<p>Paragraph one</p><p>Paragraph two</p>'
+              '<ul><li>First</li><li>Second</li></ul>'
+              '<table><tr><th>A</th></tr><tr><td>B</td></tr></table>',
+        }
+      ]);
+      final document = xml.XmlDocument.parse(parts['ppt/slides/slide1.xml']!);
+
+      ({int y, int h}) geometry(String name) {
+        final container = document.descendants
+            .whereType<xml.XmlElement>()
+            .firstWhere((element) =>
+                (element.name.local == 'sp' ||
+                    element.name.local == 'graphicFrame') &&
+                element.descendants.whereType<xml.XmlElement>().any((child) =>
+                    child.name.local == 'cNvPr' &&
+                    child.getAttribute('name') == name));
+        final transform = container.descendants
+            .whereType<xml.XmlElement>()
+            .firstWhere((element) => element.name.local == 'xfrm');
+        final offset = transform.descendants
+            .whereType<xml.XmlElement>()
+            .firstWhere((element) => element.name.local == 'off');
+        final extent = transform.descendants
+            .whereType<xml.XmlElement>()
+            .firstWhere((element) => element.name.local == 'ext');
+        return (
+          y: int.parse(offset.getAttribute('y')!),
+          h: int.parse(extent.getAttribute('cy')!),
+        );
+      }
+
+      final text = geometry('Content Text');
+      final list = geometry('List Content');
+      final table = geometry('Table');
+      expect(text.y + text.h, lessThanOrEqualTo(list.y));
+      expect(list.y + list.h, lessThanOrEqualTo(table.y));
+    });
+
     test('ZIP headers declare correct UTF-8 byte sizes for non-ASCII content',
         () async {
       // Vietnamese title/notes + bullet glyph exercise multi-byte UTF-8.
@@ -335,10 +518,8 @@ void main() {
               '<p>Visible</p><aside class="notes">Secret note</aside>',
         }
       ]);
-      expect(parts['ppt/notesSlides/notesSlide1.xml'],
-          contains('Secret note'));
-      expect(
-          parts['ppt/slides/slide1.xml']!.contains('Secret note'), isFalse);
+      expect(parts['ppt/notesSlides/notesSlide1.xml'], contains('Secret note'));
+      expect(parts['ppt/slides/slide1.xml']!.contains('Secret note'), isFalse);
     });
 
     test('hyperlink produces external relationship and hlinkClick', () async {
@@ -383,12 +564,12 @@ void main() {
 
       // Slide with a visual transition also carries the timing element.
       expect(parts['ppt/slides/slide1.xml'], contains('<p:fade/>'));
-      expect(parts['ppt/slides/slide1.xml'],
-          contains('<p:advTm val="4000"/>'));
+      expect(parts['ppt/slides/slide1.xml'], contains('advTm="4000"'));
       // Slide with no visual effect still auto-advances.
       expect(parts['ppt/slides/slide2.xml'], contains('<p:transition'));
-      expect(parts['ppt/slides/slide2.xml'],
-          contains('<p:advTm val="4000"/>'));
+      expect(parts['ppt/slides/slide2.xml'], contains('advTm="4000"'));
+      expect(parts['ppt/slides/slide1.xml'], isNot(contains('<p:advTm')));
+      expect(parts['ppt/slides/slide2.xml'], isNot(contains('<p:advTm')));
       // Generated XML stays well-formed.
       expect(() => xml.XmlDocument.parse(parts['ppt/slides/slide1.xml']!),
           returnsNormally);
@@ -400,24 +581,91 @@ void main() {
       final parts = await generateParts([
         {'title': 'A', 'htmlContent': '<p>1</p>'},
       ]);
-      expect(parts['ppt/slides/slide1.xml'],
-          isNot(contains('<p:advTm')));
+      expect(parts['ppt/slides/slide1.xml'], isNot(contains('advTm=')));
+    });
+
+    test('maps effects only to ISO PresentationML transition elements',
+        () async {
+      final checker = await generateParts(
+        [
+          {'title': 'C', 'htmlContent': '<p>x</p>'}
+        ],
+        effect: SlideEffect.checkerboard,
+      );
+      final clock = await generateParts(
+        [
+          {'title': 'W', 'htmlContent': '<p>x</p>'}
+        ],
+        effect: SlideEffect.clock,
+      );
+      final swivel = await generateParts(
+        [
+          {'title': 'S', 'htmlContent': '<p>x</p>'}
+        ],
+        effect: SlideEffect.swivel,
+      );
+
+      expect(checker['ppt/slides/slide1.xml'], contains('<p:checker/>'));
+      expect(clock['ppt/slides/slide1.xml'], contains('<p:wheel/>'));
+      expect(swivel['ppt/slides/slide1.xml'], contains('<p:fade/>'));
+    });
+  });
+
+  group('slide metadata fidelity', () {
+    test('typed bgColor overrides data-bg-color and is normalized', () async {
+      final parts = await generateParts([
+        {
+          'title': 'Background',
+          'htmlContent': '<div data-bg-color="#ff0000"><p>x</p></div>',
+          'bgColor': 'rgb(0, 128, 255)',
+        }
+      ]);
+      final slideXml = parts['ppt/slides/slide1.xml']!;
+      expect(slideXml, contains('<a:srgbClr val="0080FF"/>'));
+      expect(slideXml, isNot(contains('<a:srgbClr val="FF0000"/>')));
+    });
+
+    test('invalid background color is omitted instead of corrupting XML',
+        () async {
+      final parts = await generateParts([
+        {
+          'title': 'Background',
+          'htmlContent': '<div data-bg-color="not-a-color"><p>x</p></div>',
+        }
+      ]);
+      expect(parts['ppt/slides/slide1.xml'], isNot(contains('<p:bg>')));
     });
   });
 
   group('v0.3.0 features - package structure', () {
     test('theme, docProps and notes master parts exist', () async {
       final parts = await generateParts([
-        {'title': 'T', 'htmlContent': '<p>x</p>'}
+        {'title': 'T', 'htmlContent': '<p>x</p>', 'notes': 'note'}
       ]);
       expect(parts.keys, contains('ppt/theme/theme1.xml'));
+      expect(parts.keys, contains('ppt/theme/theme2.xml'));
       expect(parts.keys, contains('docProps/core.xml'));
       expect(parts.keys, contains('docProps/app.xml'));
       expect(parts.keys, contains('ppt/notesMasters/notesMaster1.xml'));
+      expect(parts.keys, contains('ppt/slideMasters/slideMaster1.xml'));
+      expect(parts.keys, isNot(contains('ppt/slideMaster/slideMaster1.xml')));
       expect(parts['docProps/app.xml'], contains('Ghita PPT Converter'));
       expect(parts['docProps/core.xml'], contains('<dc:title>T</dc:title>'));
       expect(() => xml.XmlDocument.parse(parts['ppt/theme/theme1.xml']!),
           returnsNormally);
+    });
+
+    test('omits the complete notes chain when no slide has notes', () async {
+      final parts = await generateParts([
+        {'title': 'T', 'htmlContent': '<p>x</p>'}
+      ]);
+      expect(parts.keys, isNot(contains('ppt/notesMasters/notesMaster1.xml')));
+      expect(parts.keys, isNot(contains('ppt/theme/theme2.xml')));
+      expect(parts['ppt/presentation.xml'],
+          isNot(contains('<p:notesMasterIdLst>')));
+      expect(parts['ppt/_rels/presentation.xml.rels'],
+          isNot(contains('relationships/notesMaster')));
+      expect(parts['[Content_Types].xml'], isNot(contains('notesMaster1.xml')));
     });
   });
 

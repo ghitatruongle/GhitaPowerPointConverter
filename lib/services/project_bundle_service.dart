@@ -27,7 +27,7 @@ class ProjectBundleService {
       // 1. Manifest
       final manifestMap = {
         'appName': 'Ghita PowerPoint Converter',
-        'version': '0.7.0',
+        'version': '1.6.0+1',
         'title': title,
         'author': author,
         'aspectRatio': aspectRatio,

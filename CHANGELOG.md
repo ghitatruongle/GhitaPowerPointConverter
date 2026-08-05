@@ -1,12 +1,171 @@
 # Changelog
 
+## [1.6.0+1] - 2026-08-05 — Bản phát hành nội bộ: bản địa hoá
+
+### Đã thay đổi
+
+- Kích hoạt bản địa hoá EN/VI trong ứng dụng và chuyển các luồng làm việc chính sang chuỗi dịch.
+- Đồng bộ nhãn phiên bản trong ứng dụng, tài liệu, dữ liệu dự án, bản nháp và bộ cài.
+- Bổ sung kiểm thử widget cho việc chuyển ngôn ngữ và hộp thoại Xuất nâng cao.
+- Hoàn thiện cộng tác nội bộ có token phiên/người dùng, giới hạn payload, snapshot slide thật, revision conflict và đồng bộ hai chiều.
+- Đưa bảng Cộng tác vào thanh công cụ trình biên tập và bổ sung giao diện EN/VI cho toàn bộ luồng kết nối.
+- Bổ sung kiểm thử semantics cho khả năng truy cập và luồng integration test thực trên Windows.
+- Bổ sung quy trình tạo installer per-user có kiểm tra metadata, SHA-256, truy vết revision nguồn, ký Authenticode tùy chọn và smoke test cài/gỡ.
+
+## [1.5.0] - 2026-08-04 — Nâng cấp toàn diện (Features + UI/UX)
+
+### ✨ Tính năng mới
+
+#### 🎨 Theme Customization System
+- **Theme provider**: Quản lý primary color, accent color, font family, theme mode
+- **Theme customization UI**: Color picker cho primary/accent/background, font selector
+- **4 preset themes**: Office Blue, Dark Professional, Light Minimal, Custom
+- **Import/export theme**: JSON format để chia sẻ theme
+- **Dynamic theme application**: Hot reload khi thay đổi theme
+
+#### ⌨️ Customizable Keyboard Shortcuts
+- **50+ keyboard shortcuts**: Tất cả actions đều có shortcut (Ctrl+N, Ctrl+S, Ctrl+E, etc.)
+- **Shortcuts provider**: Load/save từ SharedPreferences, reset to defaults
+- **Shortcuts customization UI**: Click để edit shortcut, conflict detection
+- **Import/export shortcuts**: JSON format
+
+#### 📤 Advanced Export Options
+- **Export selected slides**: Checkbox list được áp dụng thực sự cho PPTX, PDF và HTML.
+- **Tỷ lệ đầu ra**: 16:9, 4:3, 1:1 và 9:16 được ghi vào kích thước tệp/khung trình bày tương ứng.
+- **Chất lượng ảnh**: Mức Thấp / Trung bình / Cao giới hạn cạnh dài ảnh lần lượt 150 / 300 / 600 px trước khi nhúng vào mọi định dạng.
+- **Ghi chú và nền**: Hai tùy chọn bật/tắt tác động thực tế; PPTX bỏ toàn bộ quan hệ notes khi tắt, HTML và PDF chỉ đưa ghi chú vào đầu ra khi được chọn.
+- **Một luồng xuất duy nhất**: Nút Export trong Editor và Ctrl+Shift+E cùng mở hộp Advanced Export, tránh lệch hành vi giữa hai luồng.
+
+#### 🎭 Slide Master/Template System
+- **Slide master model**: HTML template với placeholders ({{title}}, {{content}})
+- **Slide master provider**: CRUD operations, persistence, built-in masters
+- **Slide master UI**: List, create/edit master, apply to new slide
+
+### ♿ Accessibility & UX Improvements
+
+#### 🌍 Localization (i18n)
+- **Song ngữ**: English + Vietnamese
+- **288 strings extracted**: Tất cả hardcoded strings đã được chuyển sang .arb files
+- **Language switcher**: Trong Settings screen
+
+#### 🏷️ Accessibility
+- **100% tooltips**: Tất cả interactive elements đều có tooltip
+- **Semantics widgets**: Screen reader support
+- **Focus management**: Tab navigation, visual focus indicators
+- **Keyboard navigation**: Full keyboard support
+
+#### 🎯 Error Handling
+- **ErrorMapper utility**: Map technical errors → user-friendly messages
+- **Categorized errors**: Network, auth, rate limit, timeout, file operations
+- **Loading indicators**: Thêm cho tất cả async operations
+- **Empty states**: UI đẹp khi không có data
+
+#### 📱 Responsive Design
+- **Breakpoints**: mobile (<600px), tablet (600-900px), desktop (>900px)
+- **Auto-hide sidebar**: Khi width < 900px
+- **Compact ribbon**: Khi width < 1200px
+- **Theme-based colors**: Thay thế 82 hardcoded `Color(0x...)` values
+- **Scalable fonts**: Thay thế 30+ hardcoded `fontSize` values
+
+### 🐛 Bug Fixes
+- **17 runtime bugs fixed**: Transparent color crash, API key masking, FocusNode leak, etc.
+- **Layout optimization**: Ribbon 90px → 60px, sidebar 200px → 150px
+- **Editor space**: Tăng không gian cho HTML editor + Preview (3:2 ratio)
+- **0 analyzer warnings**: Tất cả warnings đã được fix
+
+#### 🧱 PPTX Core Hardening
+- Sửa đường dẫn chuẩn `ppt/slideMasters/`, tên phần tử `a:prstGeom` và thứ tự `p:cSld`/`p:transition` theo PresentationML.
+- Sửa auto-advance thành thuộc tính `advTm`; ánh xạ mọi hiệu ứng sang transition ISO hợp lệ.
+- Notes Master chỉ được tạo khi có ghi chú, dùng theme riêng và placeholder/style tương thích PowerPoint.
+- Giữ các inline run đậm/nghiêng/liên kết trong cùng đoạn hoặc list item; `a:br` được xuất đúng schema và khoảng trắng giữa run được bảo toàn.
+- Phân bổ chiều cao khối văn bản, danh sách, bảng và ảnh theo không gian slide để các khối liên tiếp không chồng lấn.
+- Loại bỏ placeholder thừa và khai báo `a:buNone` cho phụ đề/đoạn văn thường để PowerPoint không tự chèn dấu đầu dòng.
+- Xuất đúng `Slide.bgColor`, loại màu không hợp lệ, không lặp lại `<h2>` subtitle trong phần nội dung.
+- Từ chối deck rỗng thay vì tạo gói PPTX không sử dụng được.
+
+### 📦 Dependencies
+- **Version**: `1.5.0+1`
+- **New**: `intl` (localization support)
+- **All existing**: 24 packages từ v1.2.0
+
+### 📝 Documentation
+- **README.md**: Updated với v1.5.0 features
+- **Keyboard shortcuts reference**: PDF cheat sheet
+- **Screenshots**: New features và UI improvements
+
+---
+
+## [1.2.0] - 2026-08-03 — Bản nâng cấp lớn (UI + Features)
+
+### 🎨 Giao diện & Điều hướng
+- **Sidebar navigation**: Thay thế BottomNavigationBar bằng NavigationRail hiện đại, có thể collapse/expand.
+- **Redesign HomeScreen**: Layout mới với sidebar, quick access toolbar, và grid overlay toggle.
+- **Material 3 Theme**: Cập nhật theme system, tối ưu cho desktop.
+
+### 🛠️ Ribbon Toolbar — Kích hoạt toàn bộ
+- **Home tab**: Clipboard (Cut/Copy/Paste), Font formatting (Bold/Italic/Underline/Strikethrough), Text color, Highlight, Alignment, Bullet/Numbered lists, Shapes.
+- **Insert tab**: New Slide, Pictures (file picker → base64), Table dialog (rows/cols), Chart dialog (CSS bar chart), SmartArt (Mermaid flowchart/mindmap), Text Box, WordArt (gradient/shadow/outline), Header, Symbol picker (48 ký tự), Code block.
+- **Design tab**: 8 theme gradients, 4 color variants, Background color picker, Gradient builder.
+- **Transitions tab**: 14 effect buttons, Apply to All, Timing (On Click / Auto / Duration).
+- **Slideshow tab**: From Beginning, From Current, Presenter View, Rehearse, Timings.
+- **View tab**: Normal, Slide Sorter, Reading View, Grid toggle, Ruler, Zoom, Fullscreen.
+
+### 📋 Properties Panel — Kích hoạt toàn bộ
+- **Slide Properties**: Background color picker (interactive), Transition dropdown, Layout dropdown.
+- **Text Properties**: Font family (7 fonts), Size (8-72px), Color picker, Alignment (left/center/right), Bold/Italic toggles.
+- **Shape Properties**: Fill color, Border color, Border width, Shadow toggle, Transparency slider.
+
+### 📁 Template Studio Screen
+- Dynamic grid từ TemplateService (20 templates, 6 categories).
+- Category filter chips, Search bar, Preview dialog, Apply button.
+
+### 📂 Recent Projects Screen
+- FilePicker cho .ghita files, Project metadata, Recent projects history (SharedPreferences).
+
+### ⚙️ Settings Screen
+- **Backup/Restore**: Export/Import toàn bộ settings + API keys → JSON file.
+- **Configuration Wizard**: 4-step wizard (provider type, API keys, model selection, summary) — fix tất cả bugs (API key masking, validation bypass, `_steps` getter recreation, `ColorUtils` extension).
+- Provider health status indicators.
+
+### 🤖 AI Provider Manager — Hợp nhất
+- **Merge `AIProviderManager` + `EnhancedAIProviderManager`**: Giữ base, thêm multi-key, health monitoring, key rotation, local AI scanning.
+- Xóa `enhanced_ai_provider_manager.dart` và `enhanced_ai_provider_config.dart`.
+- Fix: shared HTTP client, Anthropic SSE event handling, customPrompt passthrough, Gemini API key support.
+- `ProviderHealthStatus` enum (unknown/healthy/degraded/failed).
+
+### 🔧 Services mới
+- **Image Editor Service** (`image_editor_service.dart`): pick/resize/rotate/flip/adjust → base64.
+- **Audio Recording Service** (`audio_recording_service.dart`): record/pause/resume/stop per-slide narration (WAV).
+- **Collaboration Service** (`collaboration_service.dart`): local network host/join, real-time sync via HTTP endpoints.
+
+### 🎛️ Widgets mới
+- **Image Editor Dialog**: Crop, resize, rotate, flip, brightness/contrast adjustment.
+- **Audio Recorder Panel**: Floating recorder với timer, pause/resume/stop.
+- **Collaboration Panel**: Host session (QR code + share URL), Join session (IP/port/name).
+- **Mermaid Dialog**: Flowchart, Mindmap, Sequence diagram → HTML.
+- **Import Dialog**: Markdown → slides, Web URL → slides (preview trước khi import).
+
+### 🐛 Bug Fixes
+- Fix `slide_preview.dart`: data-bg-color regex parsing, color conversion.
+- Fix `api_key_rotation_service.dart`: Gemini API key support (query param vs Bearer).
+- Fix `api_fallback_cascade_service.dart`: remove duplicate `PingResult` class.
+- Fix `project_bundle_service.dart` version: `0.7.0` → `1.2.0`.
+- Fix `smart_draft_manager.dart` version: `1.0.2` → `1.2.0`.
+
+### 📦 Dependencies
+- Bump version: `1.2.0+1`
+- New: `file_picker`, `record` (^7.1.1), `audioplayers`, `shelf`, `shelf_router`, `network_info_plus`, `qr_flutter`, `highlight`, `flutter_highlight`, `url_launcher`, `window_manager`.
+- Removed redundant asset entries (5 explicit .html files).
+
+---
+
 ## [1.0.2] - 2026-08-02 — Bản vá nhỏ
 
 ### ⚡ Hiệu năng
 - **Persistent isolate cho export**: `ExportIsolateService` mở một worker isolate dài hạn (spawn 1 lần, tái sử dụng cho mọi export). Bỏ chi phí mở isolate + nạp lại snapshot mỗi lần; **font Windows cho PDF chỉ tải 1 lần** (static cache của `PdfExportService` giờ thực sự có tác dụng). Các request được serialize, tự hồi phục worker nếu chết.
 
 ### 📊 Xuất timing vào PPTX
-- **`<p:advTm val="..."/>` trong transition của mỗi slide**: Khi bật auto-advance (Timing > Auto/Duration), file PPTX xuất ra giờ tự chuyển slide theo thời lượng đã đặt — đồng nhất với trình chiếu trong app và HTML deck. Hoạt động ngay cả khi slide không có effect chuyển tiếp.
+- **Thuộc tính `advTm="..."` trên `p:transition` của mỗi slide**: Khi bật auto-advance (Timing > Auto/Duration), file PPTX xuất ra tự chuyển slide theo thời lượng đã đặt — đồng nhất với trình chiếu trong app và HTML deck. Hoạt động ngay cả khi slide không có hiệu ứng chuyển tiếp.
 
 ### 🧹 Dọn dẹp
 - **Xóa `html_to_ppt_screen.dart` (legacy ~1030 dòng)**: màn hình cũ đã bị `editor_shell.dart` thay thế và không còn được điều hướng tới; `ExportFormat` đã có sẵn bản sao trong editor. Code mới gọn hơn, không còn hai luồng export song song.

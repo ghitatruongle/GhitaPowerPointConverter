@@ -1,7 +1,12 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import '../providers/presentation_state.dart';
+import '../utils/error_mapper.dart';
 
+/// Recent Projects Screen — v1.2.0: FilePicker integration, project management
 class RecentProjectsScreen extends StatefulWidget {
   const RecentProjectsScreen({super.key});
 
@@ -11,11 +16,106 @@ class RecentProjectsScreen extends StatefulWidget {
 
 class _RecentProjectsScreenState extends State<RecentProjectsScreen> {
   final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _recentProjects = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecentProjects();
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadRecentProjects() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString('recent_projects');
+      if (jsonStr != null) {
+        final list = jsonDecode(jsonStr) as List;
+        setState(() {
+          _recentProjects = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      debugPrint('Error loading recent projects: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _saveRecentProjects() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('recent_projects', jsonEncode(_recentProjects));
+    } catch (e) {
+      debugPrint('Error saving recent projects: $e');
+    }
+  }
+
+  Future<void> _openGhitaFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['ghita'],
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final filePath = result.files.single.path!;
+        if (!mounted) return;
+        final state = Provider.of<PresentationState>(context, listen: false);
+        final success = await state.loadProjectFromFile(filePath);
+
+        if (!mounted) return;
+
+        if (success) {
+          // Add to recent projects
+          _addToRecent(filePath, result.files.single.name);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Đã mở dự án: ${result.files.single.name}'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Không thể mở file .ghita. File có thể bị lỗi.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ErrorMapper.showErrorSnackBar(context, e);
+      }
+    }
+  }
+
+  void _addToRecent(String filePath, String fileName) {
+    final entry = {
+      'path': filePath,
+      'name': fileName,
+      'openedAt': DateTime.now().toIso8601String(),
+    };
+    // Remove duplicate
+    _recentProjects.removeWhere((p) => p['path'] == filePath);
+    // Add to front
+    _recentProjects.insert(0, entry);
+    // Keep max 10
+    if (_recentProjects.length > 10) {
+      _recentProjects = _recentProjects.sublist(0, 10);
+    }
+    _saveRecentProjects();
+    setState(() {});
   }
 
   @override
@@ -29,37 +129,40 @@ class _RecentProjectsScreenState extends State<RecentProjectsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Header
             Row(
               children: [
                 Icon(Icons.folder_special, size: 28, color: theme.colorScheme.primary),
                 const SizedBox(width: 12),
                 Text(
-                  'Quản Lý Dự Án PowerPoint (.ghita)',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  'Quản Lý Dự Án (.ghita)',
+                  style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
                 ),
               ],
             ),
             const SizedBox(height: 16),
 
-            // Search bar & Filters
+            // Search bar & actions
             Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
-                      hintText: 'Tìm kiếm dự án hoặc thẻ hashtag (#Work, #Sales)...',
+                      hintText: 'Tìm kiếm dự án...',
                       prefixIcon: const Icon(Icons.search),
                       isDense: true,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.folder_open),
+                  label: const Text('Mở file .ghita'),
+                  onPressed: _openGhitaFile,
+                ),
+                const SizedBox(width: 8),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.add),
                   label: const Text('Dự Án Mới'),
@@ -67,11 +170,8 @@ class _RecentProjectsScreenState extends State<RecentProjectsScreen> {
                     state.clearSlides();
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: const Text('Đã tạo dự án thuyết trình mới!'),
-                        action: SnackBarAction(
-                          label: 'Hoàn tác',
-                          onPressed: () => state.undo(),
-                        ),
+                        content: const Text('Đã tạo dự án mới!'),
+                        action: SnackBarAction(label: 'Hoàn tác', onPressed: () => state.undo()),
                         duration: const Duration(seconds: 4),
                       ),
                     );
@@ -81,83 +181,156 @@ class _RecentProjectsScreenState extends State<RecentProjectsScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Project cards grid / list
-            Expanded(
-              child: state.slides.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.slideshow, size: 64, color: theme.colorScheme.outline),
-                          const SizedBox(height: 16),
-                          const Text('Chưa có dự án nào được chọn hoặc tạo mới.'),
-                          const SizedBox(height: 12),
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.folder_open),
-                            label: const Text('Mở File Dự Án .ghita'),
-                            onPressed: () {
+            // Current project card
+            if (state.slides.isNotEmpty) ...[
+              Card(
+                color: theme.colorScheme.primaryContainer.withValues(alpha: 0.2),
+                child: ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.present_to_all, color: theme.colorScheme.onPrimaryContainer),
+                  ),
+                  title: Text(
+                    state.presentationTitle.isNotEmpty ? state.presentationTitle : 'Dự án hiện tại',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    '${state.slides.length} slides • ${state.aspectRatio} • Đang chỉnh sửa',
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.save),
+                        tooltip: 'Lưu file .ghita',
+                        onPressed: () async {
+                          final path = await FilePicker.platform.saveFile(
+                            dialogTitle: 'Lưu dự án',
+                            fileName: '${state.presentationTitle.isNotEmpty ? state.presentationTitle : "presentation"}.ghita',
+                            type: FileType.custom,
+                            allowedExtensions: ['ghita'],
+                          );
+                          if (path != null) {
+                            final success = await state.saveProjectToFile(path);
+                            if (!context.mounted) return;
+                            if (success) {
+                              _addToRecent(path, path.split(RegExp(r'[/\\]')).last);
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Vui lòng chọn file .ghita trên máy')),
+                                const SnackBar(content: Text('Đã lưu dự án thành công!'), backgroundColor: Colors.green),
                               );
-                            },
-                          ),
-                        ],
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Lỗi lưu dự án'), backgroundColor: Colors.red),
+                              );
+                            }
+                          }
+                        },
                       ),
-                    )
-                  : ListView(
-                      children: [
-                        Card(
-                          child: ListTile(
-                            leading: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primaryContainer,
-                                borderRadius: BorderRadius.circular(8),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // Recent projects list
+            Text(
+              'Dự Án Gần Đây',
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _recentProjects.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.folder_off, size: 64, color: theme.colorScheme.outline),
+                              const SizedBox(height: 16),
+                              const Text('Chưa có dự án nào được mở gần đây'),
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.folder_open),
+                                label: const Text('Mở File .ghita'),
+                                onPressed: _openGhitaFile,
                               ),
-                              child: Icon(Icons.present_to_all,
-                                  color: theme.colorScheme.onPrimaryContainer),
-                            ),
-                            title: Text(
-                              state.presentationTitle.isNotEmpty
-                                  ? state.presentationTitle
-                                  : 'Dự án thuyết trình hiện tại',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            subtitle: Text(
-                              '${state.slides.length} slide • Tỷ lệ: ${state.aspectRatio} • Lần cuối: Vừa xong',
-                            ),
-                            trailing: PopupMenuButton(
-                              itemBuilder: (ctx) => [
-                                const PopupMenuItem(
-                                  value: 'export',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.save_alt, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Lưu file .ghita'),
-                                    ],
-                                  ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                      itemCount: _recentProjects.length,
+                      itemBuilder: (ctx, idx) {
+                        final project = _recentProjects[idx];
+                        final openedAt = DateTime.tryParse(project['openedAt'] ?? '') ?? DateTime.now();
+                        final timeAgo = _formatTimeAgo(openedAt);
+
+                        return Card(
+                          child: ListTile(
+                            leading: Icon(Icons.description, color: theme.colorScheme.primary),
+                            title: Text(project['name'] ?? 'Unknown', style: const TextStyle(fontWeight: FontWeight.w600)),
+                            subtitle: Text(project['path'] ?? ''),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(timeAgo, style: theme.textTheme.bodySmall),
+                                IconButton(
+                                  icon: const Icon(Icons.open_in_new, size: 18),
+                                  tooltip: 'Mở',
+                                  onPressed: () async {
+                                    final path = project['path'] as String?;
+                                    if (path != null) {
+                                      final state = Provider.of<PresentationState>(context, listen: false);
+                                      final success = await state.loadProjectFromFile(path);
+                                      if (!context.mounted) return;
+                                      if (success) {
+                                        _addToRecent(path, project['name'] as String);
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('Đã mở: ${project['name']}')),
+                                        );
+                                      } else {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Không thể mở file. File có thể đã bị xoá.'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
                                 ),
-                                const PopupMenuItem(
-                                  value: 'duplicate',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.copy, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Nhân bản dự án'),
-                                    ],
-                                  ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, size: 18),
+                                  tooltip: 'Xoá khỏi danh sách',
+                                  onPressed: () {
+                                    setState(() => _recentProjects.removeAt(idx));
+                                    _saveRecentProjects();
+                                  },
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _formatTimeAgo(DateTime dateTime) {
+    final diff = DateTime.now().difference(dateTime);
+    if (diff.inMinutes < 1) return 'Vừa xong';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} phút trước';
+    if (diff.inHours < 24) return '${diff.inHours} giờ trước';
+    if (diff.inDays < 7) return '${diff.inDays} ngày trước';
+    return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
   }
 }

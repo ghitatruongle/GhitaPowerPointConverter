@@ -1,27 +1,33 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'screens/home_screen.dart';
 import 'providers/app_provider.dart';
 import 'providers/ai_provider_manager.dart';
 import 'providers/presentation_state.dart';
+import 'providers/shortcuts_provider.dart';
+import 'providers/theme_provider.dart';
+import 'providers/locale_provider.dart';
+import 'services/collaboration_service.dart';
+import 'theme/app_theme.dart';
+import 'l10n/app_localizations.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Global error boundary — catch unhandled Flutter errors
+  // Global error boundary
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
     debugPrint('FlutterError: ${details.exception}');
     debugPrint('Stack: ${details.stack}');
   };
 
-  // Catch async errors that escape the zone
   PlatformDispatcher.instance.onError = (error, stack) {
     debugPrint('PlatformDispatcher Error: $error');
     debugPrint('Stack: $stack');
-    return true; // We handled it
+    return true;
   };
 
   SystemChrome.setPreferredOrientations([
@@ -48,66 +54,39 @@ class MyApp extends StatelessWidget {
           manager.loadProviders();
           return manager;
         }),
+        ChangeNotifierProvider(create: (_) => ShortcutsProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => LocaleProvider()),
+        ProxyProvider<PresentationState, CollaborationService>(
+          create: (_) => CollaborationService(),
+          update: (_, presentation, service) =>
+              (service ?? CollaborationService())..bindPresentation(presentation),
+          dispose: (_, service) => service.dispose(),
+        ),
       ],
-      child: Consumer<AppProvider>(
-        builder: (context, appProvider, _) {
+      child: Consumer3<AppProvider, ThemeProvider, LocaleProvider>(
+        builder: (context, appProvider, themeProvider, localeProvider, _) {
           return MaterialApp(
             title: 'Ghita PPT Converter',
             debugShowCheckedModeBanner: false,
+            locale: localeProvider.locale,
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: const [
+              AppLocalizations.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
             themeMode: appProvider.themeMode,
-            theme: ThemeData(
-              useMaterial3: true,
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.deepOrange,
-                brightness: Brightness.light,
-              ),
-              cardTheme: const CardThemeData(
-                elevation: 2,
-                margin: EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(16)),
-                ),
-              ),
-              dividerTheme: const DividerThemeData(
-                color: Color(0xFFE0E0E0),
-                thickness: 1,
-                space: 1,
-              ),
-              appBarTheme: const AppBarTheme(
-                centerTitle: false,
-                elevation: 0,
-                surfaceTintColor: Colors.transparent,
-              ),
-              bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-                elevation: 4,
-              ),
+            theme: AppTheme.lightTheme(
+              primaryColor: themeProvider.primaryColor,
+              accentColor: themeProvider.accentColor,
+              fontFamily: themeProvider.fontFamily,
             ),
-            darkTheme: ThemeData(
-              useMaterial3: true,
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.deepOrange,
-                brightness: Brightness.dark,
-              ),
-              cardTheme: const CardThemeData(
-                elevation: 2,
-                margin: EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(16)),
-                ),
-              ),
-              dividerTheme: const DividerThemeData(
-                color: Color(0xFF404040),
-                thickness: 1,
-                space: 1,
-              ),
-              appBarTheme: const AppBarTheme(
-                centerTitle: false,
-                elevation: 0,
-                surfaceTintColor: Colors.transparent,
-              ),
-              bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-                elevation: 4,
-              ),
+            darkTheme: AppTheme.darkTheme(
+              primaryColor: themeProvider.primaryColor,
+              accentColor: themeProvider.accentColor,
+              fontFamily: themeProvider.fontFamily,
             ),
             home: const HomeScreen(),
           );

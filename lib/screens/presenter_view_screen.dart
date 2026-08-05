@@ -67,6 +67,22 @@ class _PresenterViewScreenState extends State<PresenterViewScreen> {
   @override
   Widget build(BuildContext context) {
     final slides = widget.state.slides;
+    if (slides.isEmpty) {
+      // Defensive guard: slides can be cleared while this screen is open.
+      // Auto-close instead of throwing RangeError below.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).pop();
+      });
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Text(
+            'No slides to present.',
+            style: TextStyle(color: Colors.white70),
+          ),
+        ),
+      );
+    }
     final current = slides[_currentSlide];
     final nextSlide = _currentSlide < slides.length - 1 ? slides[_currentSlide + 1] : null;
     final theme = Theme.of(context);

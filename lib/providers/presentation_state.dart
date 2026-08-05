@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import '../models/export_options.dart';
 import '../models/slide.dart';
 import '../services/html_export_service.dart';
 import '../services/export_isolate.dart';
@@ -63,7 +64,8 @@ class PresentationState with ChangeNotifier {
   }
 
   void _persistAutoAdvance() {
-    unawaited(_configService.saveAutoAdvance(_autoAdvance, _autoAdvanceSeconds));
+    unawaited(
+        _configService.saveAutoAdvance(_autoAdvance, _autoAdvanceSeconds));
   }
 
   /// Track the slide currently selected in the editor (used by the ribbon's
@@ -98,7 +100,6 @@ class PresentationState with ChangeNotifier {
     notifyListeners();
     _persistAutoAdvance();
   }
-
 
   // ---- History Undo/Redo ----
 
@@ -184,7 +185,8 @@ class PresentationState with ChangeNotifier {
       _keepCurrentSlideInRange();
       final manifest = data['manifest'] as Map<String, dynamic>?;
       if (manifest != null) {
-        _presentationTitle = (manifest['title'] ?? 'Dự Án Thuyết Trình').toString();
+        _presentationTitle =
+            (manifest['title'] ?? 'Dự Án Thuyết Trình').toString();
         _aspectRatio = (manifest['aspectRatio'] ?? '16:9').toString();
       }
       _historyService.clear();
@@ -263,6 +265,18 @@ class PresentationState with ChangeNotifier {
     _debouncedSave();
   }
 
+  /// Replaces the document with an authenticated collaboration snapshot.
+  /// The operation is recorded as one history step and persisted locally so a
+  /// received update behaves exactly like a normal editor change.
+  void replaceSlidesFromCollaboration(List<Slide> slides) {
+    _recordHistory('Before Collaboration Sync');
+    _slides = slides.map((slide) => slide.copyWith()).toList(growable: true);
+    _keepCurrentSlideInRange();
+    _recordHistory('Collaboration Sync');
+    notifyListeners();
+    _debouncedSave();
+  }
+
   void setEffect(SlideEffect effect) {
     _slideEffect = effect;
     notifyListeners();
@@ -282,6 +296,75 @@ class PresentationState with ChangeNotifier {
   List<Map<String, dynamic>> _slideMaps() =>
       _slides.map((s) => s.toMap()).toList();
 
+  /// Execute the complete Advanced Export request. Every visible dialog option
+  /// is carried to the selected exporter rather than being reduced to a
+  /// format-only export.
+  Future<String> exportWithOptions(
+    String fileName,
+    ExportOptions options,
+  ) async {
+    exportStatus = 'exporting';
+    notifyListeners();
+    try {
+      final selectedSlides = options.selectSlides(_slideMaps());
+      final targetDir = await getApplicationDocumentsDirectory();
+      final safeName =
+          fileName.replaceAll(RegExp(r'[^\w\.-]'), '_').replaceFirst(
+                RegExp('\\.${RegExp.escape(options.format.extension)}' r'$'),
+                '',
+              );
+      final outputPath =
+          '${targetDir.path}/$safeName.${options.format.extension}';
+
+      final String path;
+      switch (options.format) {
+        case PresentationExportFormat.pptx:
+          path = await runPptExportInIsolate(
+            selectedSlides,
+            outputPath,
+            effect: _slideEffect,
+            aspectRatio: options.aspectRatio,
+            includeNotes: options.includeNotes,
+            includeBackgrounds: options.includeBackgrounds,
+            imageMaxWidth: options.quality.imageMaxWidth,
+            autoAdvance:
+                _autoAdvance ? Duration(seconds: _autoAdvanceSeconds) : null,
+          );
+          break;
+        case PresentationExportFormat.html:
+          path = await runHtmlExportInIsolate(
+            selectedSlides,
+            outputPath,
+            aspectRatio: options.aspectRatio,
+            includeNotes: options.includeNotes,
+            includeBackgrounds: options.includeBackgrounds,
+            imageMaxWidth: options.quality.imageMaxWidth,
+          );
+          break;
+        case PresentationExportFormat.pdf:
+          path = await runPdfExportInIsolate(
+            selectedSlides,
+            outputPath,
+            aspectRatio: options.aspectRatio,
+            includeNotes: options.includeNotes,
+            includeBackgrounds: options.includeBackgrounds,
+            imageMaxWidth: options.quality.imageMaxWidth,
+          );
+          break;
+      }
+      lastExportedPath = path;
+      exportStatus = 'success';
+      notifyListeners();
+      _resetExportStatus();
+      return path;
+    } catch (e) {
+      exportStatus = 'error';
+      notifyListeners();
+      _resetExportStatus();
+      rethrow;
+    }
+  }
+
   // ---- Persistence ----
 
   Future<void> savePresentation([String? title]) async {
@@ -295,22 +378,19 @@ class PresentationState with ChangeNotifier {
         .toList();
     _keepCurrentSlideInRange();
     try {
-      _slideEffect =
-          SlideEffect.values.byName(data['slide_effect'] ?? 'none');
+      _slideEffect = SlideEffect.values.byName(data['slide_effect'] ?? 'none');
     } catch (_) {
       _slideEffect = SlideEffect.none;
     }
     notifyListeners();
   }
 
-  Future<String> exportToPPT(String fileName,
-      {bool widescreen = true}) async {
+  Future<String> exportToPPT(String fileName, {bool widescreen = true}) async {
     exportStatus = 'exporting';
     notifyListeners();
     try {
       final Directory targetDir = await getApplicationDocumentsDirectory();
-      final String sanitizeName =
-          fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
+      final String sanitizeName = fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
       final String fullPath = '${targetDir.path}/$sanitizeName.pptx';
 
       final String path = await runPptExportInIsolate(
@@ -367,8 +447,7 @@ class PresentationState with ChangeNotifier {
     notifyListeners();
     try {
       final Directory targetDir = await getApplicationDocumentsDirectory();
-      final String safeName =
-          fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
+      final String safeName = fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
       final String fullPath = '${targetDir.path}/$safeName.html';
       final String exportedPath =
           await runHtmlExportInIsolate(_slideMaps(), fullPath);
@@ -411,8 +490,7 @@ class PresentationState with ChangeNotifier {
     notifyListeners();
     try {
       final Directory targetDir = await getApplicationDocumentsDirectory();
-      final String sanitizeName =
-          fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
+      final String sanitizeName = fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
       final String fullPath = '${targetDir.path}/$sanitizeName.pdf';
       final String exportedPath = await runPdfExportInIsolate(
         _slideMaps(),
