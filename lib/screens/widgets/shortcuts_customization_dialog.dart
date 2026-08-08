@@ -77,6 +77,7 @@ class _ShortcutsCustomizationDialogState
                       final isEditing = _editingAction == action;
 
                       return Card(
+                        key: ValueKey(action),
                         margin: const EdgeInsets.symmetric(vertical: 2),
                         child: ListTile(
                           title: Text(
@@ -294,36 +295,66 @@ class _ShortcutsCustomizationDialogState
   }
 
   void _exportShortcuts(ShortcutsProvider provider) {
-    final json = provider.exportToJson();
-    Clipboard.setData(ClipboardData(text: json));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Shortcuts copied to clipboard!'),
-        duration: Duration(seconds: 2),
-      ),
-    );
+    try {
+      final json = provider.exportToJson();
+      Clipboard.setData(ClipboardData(text: json));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Shortcuts copied to clipboard!'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to export shortcuts'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   void _importShortcuts(ShortcutsProvider provider) async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (data?.text != null) {
-      final success = provider.importFromJson(data!.text!);
-      if (success && mounted) {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      if (!mounted) return; // dialog may have been closed while awaiting
+      if (data?.text != null) {
+        final success = provider.importFromJson(data!.text!);
+        if (success && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Shortcuts imported successfully!'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to import shortcuts. Invalid format.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Shortcuts imported successfully!'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to import shortcuts. Invalid format.'),
-            backgroundColor: Colors.red,
+            content: Text('Clipboard is empty'),
             duration: Duration(seconds: 2),
           ),
         );
       }
+    } catch (e) {
+      // importFromJson can throw on malformed JSON — don't crash.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to import shortcuts. Invalid format.'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 2),
+        ),
+      );
     }
   }
 }

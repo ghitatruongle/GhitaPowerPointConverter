@@ -167,7 +167,7 @@ class _TemplateStudioScreenState extends State<TemplateStudioScreen> {
                           itemCount: _filteredTemplates.length,
                           itemBuilder: (ctx, idx) {
                             final t = _filteredTemplates[idx];
-                            return _buildTemplateCard(context, t);
+                            return _buildTemplateCard(context, t, idx);
                           },
                         ),
             ),
@@ -177,11 +177,12 @@ class _TemplateStudioScreenState extends State<TemplateStudioScreen> {
     );
   }
 
-  Widget _buildTemplateCard(BuildContext context, SlideTemplate template) {
+  Widget _buildTemplateCard(BuildContext context, SlideTemplate template, int index) {
     final theme = Theme.of(context);
     final accentColor = template.accentColor;
 
     return Card(
+      key: ValueKey(template.name),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _showTemplateDetail(context, template),

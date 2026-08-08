@@ -18,7 +18,10 @@ class ImageEditorService {
         final file = File(result.files.single.path!);
         final bytes = await file.readAsBytes();
         final base64Str = base64Encode(bytes);
-        final ext = result.files.single.extension ?? 'png';
+        var ext = result.files.single.extension ?? 'png';
+        // 'jpg' is not a registered MIME type — downstream renderers can
+        // reject 'data:image/jpg;base64,...'. Map to 'jpeg'.
+        if (ext.toLowerCase() == 'jpg') ext = 'jpeg';
         return 'data:image/$ext;base64,$base64Str';
       }
     } catch (e) {

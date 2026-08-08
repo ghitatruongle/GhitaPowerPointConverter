@@ -35,6 +35,9 @@ class PresentationState with ChangeNotifier {
   final ProjectBundleService _bundleService = ProjectBundleService();
   Timer? _saveDebounce;
   Timer? _exportStatusTimer;
+  // Reuse the HTML export service to avoid rebuilding presentation logic and
+  // to benefit from its image downscaling / in-memory optimizations.
+  final HtmlExportService _htmlExportService = HtmlExportService();
 
   List<Slide> get slides => _slides;
   SlideEffect get slideEffect => _slideEffect;
@@ -217,6 +220,16 @@ class PresentationState with ChangeNotifier {
       notifyListeners();
       _debouncedSave();
     }
+  }
+
+  /// Insert a slide at an explicit [index] (used by delete-undo to restore the
+  /// original position rather than appending at the end).
+  void insertSlide(int index, Slide slide) {
+    final clamped = index.clamp(0, _slides.length);
+    _slides.insert(clamped, slide);
+    _recordHistory('Chèn Slide');
+    notifyListeners();
+    _debouncedSave();
   }
 
   /// Update a slide at the given index with new data.
@@ -535,13 +548,17 @@ class PresentationState with ChangeNotifier {
   }
 
   /// Build the standalone HTML deck string (used by in-app present mode).
+  ///
+  /// Reuses a single [HtmlExportService] instance and limits embedded images
+  /// to [imageMaxWidth] to reduce memory pressure during presentation.
   String buildHtmlDeck({int startIndex = 0}) {
     final autoAdvance =
         _autoAdvance ? Duration(seconds: _autoAdvanceSeconds) : null;
-    return HtmlExportService().buildPresentationHtml(
+    return _htmlExportService.buildPresentationHtml(
       _slideMaps(),
       startIndex: startIndex,
       autoAdvance: autoAdvance,
+      imageMaxWidth: 1200,
     );
   }
 }

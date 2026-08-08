@@ -1,5 +1,13 @@
 /// Service to generate Mermaid.js diagram definitions and HTML graphic representations.
 class MermaidDiagramService {
+  /// Escape user text before embedding into generated HTML (steps/topics can
+  /// contain quotes, `<`, `&` which previously broke the markup).
+  static String _esc(String s) => s
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;');
+
   /// Generates a Mermaid flowchart HTML block.
   String generateFlowchartHtml(List<String> steps) {
     if (steps.isEmpty) return '';
@@ -11,7 +19,7 @@ class MermaidDiagramService {
     for (var i = 0; i < steps.length; i++) {
       buffer.writeln(
         '<div style="padding: 12px 18px; background: #3B82F6; color: white; border-radius: 8px; font-weight: bold;">'
-        '${i + 1}. ${steps[i]}'
+        '${i + 1}. ${_esc(steps[i])}'
         '</div>',
       );
       if (i < steps.length - 1) {
@@ -27,13 +35,13 @@ class MermaidDiagramService {
   String generateMindmapHtml(String centralTopic, List<String> subtopics) {
     final buffer = StringBuffer();
     buffer.writeln('<div class="diagram-mindmap" style="padding: 16px; background: rgba(0,0,0,0.03); border-radius: 12px; margin-top: 16px;">');
-    buffer.writeln('<h3>Sơ Đồ Tư Duy (Mindmap): $centralTopic</h3>');
+    buffer.writeln('<h3>Sơ Đồ Tư Duy (Mindmap): ${_esc(centralTopic)}</h3>');
     buffer.writeln('<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">');
 
     for (final topic in subtopics) {
       buffer.writeln(
         '<div style="padding: 14px; background: #10B981; color: white; border-radius: 8px; text-align: center; font-weight: 500;">'
-        '📌 $topic'
+        '📌 ${_esc(topic)}'
         '</div>',
       );
     }

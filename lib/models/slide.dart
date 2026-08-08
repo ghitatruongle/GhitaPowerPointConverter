@@ -114,8 +114,11 @@ class Slide {
       bgColor: bgColor ?? this.bgColor,
       customCss: customCss ?? this.customCss,
       layoutType: layoutType ?? this.layoutType,
-      tags: tags ?? this.tags,
-      visualElements: visualElements ?? this.visualElements,
+      // Deep-copy the containers: history/undo reuses copyWith for snapshots,
+      // and aliasing the same mutable List/Map would let an in-place mutation
+      // corrupt every stored snapshot at once.
+      tags: List.of(tags ?? this.tags),
+      visualElements: Map<String, dynamic>.of(visualElements ?? this.visualElements),
     );
   }
 

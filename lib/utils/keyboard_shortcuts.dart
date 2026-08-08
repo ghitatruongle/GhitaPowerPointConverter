@@ -159,7 +159,10 @@ class AppShortcuts {
 
   /// Get default shortcut cho một action
   static SingleActivator getDefault(ShortcutAction action) {
-    return _defaults[action]!;
+    // orElse guards against a future enum entry missing a default — the
+    // previous `!` would hard-crash on lookup.
+    return _defaults[action] ??
+        const SingleActivator(LogicalKeyboardKey.keyA, control: true);
   }
 
   /// Get tất cả default shortcuts

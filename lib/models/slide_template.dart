@@ -75,7 +75,14 @@ class SlideTemplate {
         orElse: () => SlideEffect.none,
       ),
       icon: iconForCodePoint(map['icon'] as int?),
-      accentColor: Color(map['accentColor'] as int),
+      // Tolerate persisted templates whose accentColor is missing or stored as a
+      // hex string (theme exports do) instead of throwing and aborting the
+      // whole template/bundle load.
+      accentColor: Color(
+        map['accentColor'] is int
+            ? map['accentColor'] as int
+            : 0xFF2196F3, // default Office Blue
+      ),
       category: (map['category'] as String?) ?? 'General',
     );
   }

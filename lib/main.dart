@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 import 'screens/home_screen.dart';
 import 'providers/app_provider.dart';
 import 'providers/ai_provider_manager.dart';
@@ -14,8 +15,12 @@ import 'services/collaboration_service.dart';
 import 'theme/app_theme.dart';
 import 'l10n/app_localizations.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // window_manager must be initialized before runApp for the editor's
+  // fullscreen toggle (View tab) and any window-level operations to work.
+  await windowManager.ensureInitialized();
 
   // Global error boundary
   FlutterError.onError = (details) {

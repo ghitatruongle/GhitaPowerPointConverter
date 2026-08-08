@@ -44,7 +44,9 @@ class StatusBar extends StatelessWidget {
             Icon(Icons.slideshow, size: 12, color: theme.colorScheme.primary),
             const SizedBox(width: 4),
             Text(
-              'Slide ${currentSlide > 0 ? currentSlide : 1} / $totalSlides',
+              totalSlides > 0
+                  ? 'Slide ${currentSlide.clamp(1, totalSlides)} / $totalSlides'
+                  : 'Slide 0 / 0',
               style: TextStyle(
                 fontSize: 11,
                 color: theme.colorScheme.onPrimaryContainer,
@@ -71,28 +73,34 @@ class StatusBar extends StatelessWidget {
 
             const Spacer(),
 
-            // Auto-save indicator
+            // Auto-save/export indicator.
+            // The caller passes PresentationState.exportStatus which uses
+            // 'exporting' / 'success' / 'error' — comparing against those
+            // (previously the widget compared 'saving'/'saved', which never
+            // matched, so every export showed the red "Error" icon).
             if (autoSaveStatus != null) ...[
               Icon(
-                autoSaveStatus == 'saving'
+                autoSaveStatus == 'exporting'
                     ? Icons.sync
-                    : autoSaveStatus == 'saved'
+                    : autoSaveStatus == 'success'
                         ? Icons.check_circle_outline
                         : Icons.error_outline,
                 size: 12,
-                color: autoSaveStatus == 'saved'
+                color: autoSaveStatus == 'success'
                     ? Colors.green
-                    : autoSaveStatus == 'saving'
+                    : autoSaveStatus == 'exporting'
                         ? Colors.orange
                         : Colors.red,
               ),
               const SizedBox(width: 4),
               Text(
-                autoSaveStatus == 'saving'
-                    ? 'Saving...'
-                    : autoSaveStatus == 'saved'
-                        ? 'Saved'
-                        : 'Error',
+                autoSaveStatus == 'exporting'
+                    ? 'Đang xuất...'
+                    : autoSaveStatus == 'success'
+                        ? 'Đã xuất'
+                        : autoSaveStatus == 'error'
+                            ? 'Lỗi'
+                            : 'Đã lưu',
                 style: TextStyle(
                   fontSize: 10,
                   color: theme.colorScheme.onSurfaceVariant,

@@ -83,6 +83,12 @@ class _PresenterViewScreenState extends State<PresenterViewScreen> {
         ),
       );
     }
+    // Clamp BEFORE indexing: collaboration sync can shrink the deck while
+    // this screen is open, and a stale _currentSlide would throw RangeError
+    // (the empty-deck guard alone does not protect against a partial shrink).
+    if (_currentSlide >= slides.length) {
+      _currentSlide = slides.length - 1;
+    }
     final current = slides[_currentSlide];
     final nextSlide = _currentSlide < slides.length - 1 ? slides[_currentSlide + 1] : null;
     final theme = Theme.of(context);

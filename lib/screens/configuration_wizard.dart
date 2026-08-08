@@ -322,6 +322,7 @@ class _ProviderTypeStepState extends State<_ProviderTypeStep> {
               final isSelected = _selectedProviderType == provider['id'];
 
               return GestureDetector(
+                key: ValueKey(provider['id']),
                 onTap: () {
                   setState(() {
                     _selectedProviderType = provider['id'];

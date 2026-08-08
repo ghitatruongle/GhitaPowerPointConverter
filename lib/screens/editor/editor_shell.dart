@@ -16,6 +16,10 @@ import '../../l10n/l10n.dart';
 /// Left: Slide thumbnails | Center: HTML editor + preview | Right: (future Properties)
 ///
 /// This replaces the monolithic HtmlToPPTScreen with a clean, composable layout.
+///
+/// The EditorState is owned by HomeScreen (single source of truth so the
+/// ribbon toolbar and status bar can drive the same editor instance); this
+/// shell resolves it from the provider scope instead of creating its own.
 class EditorShell extends StatefulWidget {
   const EditorShell({super.key});
 
@@ -24,19 +28,8 @@ class EditorShell extends StatefulWidget {
 }
 
 class _EditorShellState extends State<EditorShell> {
-  late final EditorState _editorState;
-
-  @override
-  void initState() {
-    super.initState();
-    _editorState = EditorState();
-  }
-
-  @override
-  void dispose() {
-    _editorState.dispose();
-    super.dispose();
-  }
+  EditorState get _editorState =>
+      Provider.of<EditorState>(context, listen: false);
 
   // ---- Export Dialog ----
 
@@ -226,10 +219,11 @@ class _EditorShellState extends State<EditorShell> {
               _editorState.addOrUpdateSlide(context),
           const SingleActivator(LogicalKeyboardKey.keyE, control: true): () =>
               _showExportDialog(),
-          const SingleActivator(LogicalKeyboardKey.keyE,
-              control: true, shift: true): () => _showExportDialog(),
-          const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
-              _showExportDialog(),
+          // Ctrl+S must SAVE (matches QAT tooltip "Save (Ctrl+S)") — it must
+          // NOT open the export dialog.
+          const SingleActivator(LogicalKeyboardKey.keyS, control: true): () async {
+            await presentationState.savePresentation();
+          },
           const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () =>
               presentationState.undo(),
           const SingleActivator(LogicalKeyboardKey.keyY, control: true): () =>
@@ -257,9 +251,7 @@ class _EditorShellState extends State<EditorShell> {
           SizedBox(
             width: 150,
             child: SlideListPanel(
-              onAddSlide: () {
-                _editorState.clearEditor();
-              },
+              onAddSlide: () => _editorState.startNewSlide(context),
               onClearAll: _confirmClearAll,
             ),
           ),
@@ -339,6 +331,29 @@ class _EditorShellState extends State<EditorShell> {
               style: FilledButton.styleFrom(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          const SizedBox(width: 4),
+          // Present From Current
+          if (presentationState.slides.isNotEmpty &&
+              presentationState.currentSlideIndex >= 0 &&
+              presentationState.currentSlideIndex < presentationState.slides.length)
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => PresentScreen(
+                    state: presentationState,
+                    startSlide: presentationState.currentSlideIndex,
+                  ),
+                ));
+              },
+              icon: const Icon(Icons.play_circle_outline, size: 14),
+              label: Text(context.l10n.presentFromCurrent,
+                  style: const TextStyle(fontSize: 11)),
+              style: OutlinedButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 visualDensity: VisualDensity.compact,
               ),
             ),

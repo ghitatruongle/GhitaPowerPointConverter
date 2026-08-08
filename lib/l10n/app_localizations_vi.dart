@@ -57,6 +57,9 @@ class AppLocalizationsVi extends AppLocalizations {
   String get present => 'Trình Chiếu';
 
   @override
+  String get presentFromCurrent => 'Từ Slide Hiện Tại';
+
+  @override
   String get presentation => 'Bài Thuyết Trình';
 
   @override

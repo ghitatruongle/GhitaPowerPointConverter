@@ -19,6 +19,10 @@ import '../providers/presentation_state.dart';
 /// rejected with the authoritative snapshot.
 class CollaborationService {
   static const int maxPayloadBytes = 2 * 1024 * 1024;
+  /// Maximum concurrent collaborators before the oldest is evicted. Without
+  /// this, repeated /join calls grow memory and mint tokens without bound.
+  static const int maxCollaborators = 20;
+  /// Read/connect deadline for outbound HTTP requests (join/poll/push).
   static const int maxSlides = 200;
   static const int maxTitleLength = 500;
   static const int maxHtmlLength = 250000;
@@ -33,6 +37,9 @@ class CollaborationService {
   CollaborationMode _mode = CollaborationMode.idle;
   final List<CollaboratorInfo> _collaborators = [];
   final Map<String, CollaboratorInfo> _accessTokens = {};
+  /// Guards against overlapping polls: Timer.periodic keeps firing while a
+  /// slow poll is still in flight, which can apply snapshots out of order.
+  bool _polling = false;
   final StreamController<CollaborationEvent> _eventController =
       StreamController<CollaborationEvent>.broadcast();
   final Random _secureRandom = Random.secure();
@@ -199,6 +206,12 @@ class CollaborationService {
         joinedAt: DateTime.now(),
       );
       final accessToken = _newToken(32);
+      // Cap the collaborator list — without this, repeated /join calls grow
+      // memory without bound and mint tokens that are never revoked.
+      if (_collaborators.length >= maxCollaborators) {
+        final evicted = _collaborators.removeAt(0);
+        _accessTokens.removeWhere((_, c) => c.id == evicted.id);
+      }
       _collaborators.add(collaborator);
       _accessTokens[accessToken] = collaborator;
       _emit(CollaborationEventType.userJoined, collaborator);
@@ -221,7 +234,9 @@ class CollaborationService {
     if (!_isAuthorizedCollaborator(request)) {
       return _errorResponse(401, 'unauthorized');
     }
-    _captureLocalSlides(incrementRevision: true);
+    // Read-only: do NOT mutate server state (revision/slides) on a GET.
+    // Previously this incremented _revision, racing with in-flight syncs and
+    // forcing spurious 409s.
     return _jsonResponse(200, {
       'revision': _revision,
       'slides': _slides,
@@ -249,10 +264,13 @@ class CollaborationService {
         });
       }
 
+      // Apply BEFORE committing the new revision, so an apply failure keeps
+      // server state consistent (previously _revision was bumped even when
+      // the document write threw, desyncing clients).
+      await _applyRemoteSlides(incomingSlides);
       _revision++;
       _slides = incomingSlides;
       _slidesFingerprint = jsonEncode(_slides);
-      await _applyRemoteSlides(incomingSlides);
       _emit(CollaborationEventType.slideUpdated, {
         'revision': _revision,
         'slideCount': incomingSlides.length,
@@ -331,10 +349,11 @@ class CollaborationService {
   }
 
   Future<void> _pollHost() async {
-    if (!isJoined || _disposed) return;
-    final response = await _authorizedRequest('GET', '/slides');
-    if (response == null) return;
+    if (!isJoined || _disposed || _polling) return;
+    _polling = true; // Guard: skip if a prior poll is still in flight.
     try {
+      final response = await _authorizedRequest('GET', '/slides');
+      if (response == null) return;
       final data = await _decodeResponseObject(response);
       if (response.statusCode == 401) {
         _emit(CollaborationEventType.authenticationFailed, null);
@@ -354,6 +373,8 @@ class CollaborationService {
       });
     } catch (e) {
       debugPrint('CollaborationService: poll response rejected: $e');
+    } finally {
+      _polling = false;
     }
   }
 
@@ -567,7 +588,9 @@ class CollaborationService {
     HttpClientResponse response,
   ) async {
     final bytes = <int>[];
-    await for (final chunk in response) {
+    // Apply a read deadline per chunk: a slow-drip host must never stall the
+    // poll/push/join forever. Only connect/headers had a timeout before.
+    await for (final chunk in response.timeout(requestTimeout)) {
       bytes.addAll(chunk);
       if (bytes.length > maxPayloadBytes) {
         throw const CollaborationPayloadException(413, 'response_too_large');

@@ -86,6 +86,7 @@ class _ProviderSettingsScreenState extends State<ProviderSettingsScreen> {
           final isLoading = _loadingState[p.id] ?? false;
 
           return Card(
+            key: ValueKey(p.id),
             margin: const EdgeInsets.only(bottom: 16),
             child: Padding(
               padding: const EdgeInsets.all(16),

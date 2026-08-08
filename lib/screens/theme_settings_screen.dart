@@ -463,22 +463,31 @@ class _ThemeSettingsScreenState extends State<ThemeSettingsScreen> {
   }
 
   void _exportTheme(ThemeProvider provider) {
-    final json = provider.exportToJson();
-    Clipboard.setData(ClipboardData(text: json));
-    _showSnackBar('Theme copied to clipboard!');
+    try {
+      final json = provider.exportToJson();
+      Clipboard.setData(ClipboardData(text: json));
+      _showSnackBar('Theme copied to clipboard!');
+    } catch (e) {
+      _showSnackBar('Failed to export theme');
+    }
   }
 
   void _importTheme(ThemeProvider provider) async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (data?.text != null) {
-      final success = provider.importFromJson(data!.text!);
-      if (success && mounted) {
-        _showSnackBar('Theme imported successfully!');
-      } else if (mounted) {
-        _showSnackBar('Failed to import theme. Invalid format.');
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      if (data?.text != null) {
+        final success = provider.importFromJson(data!.text!);
+        if (success && mounted) {
+          _showSnackBar('Theme imported successfully!');
+        } else if (mounted) {
+          _showSnackBar('Failed to import theme. Invalid format.');
+        }
+      } else {
+        _showSnackBar('Clipboard is empty');
       }
-    } else {
-      _showSnackBar('Clipboard is empty');
+    } catch (e) {
+      // importFromJson can throw on malformed JSON — don't crash.
+      _showSnackBar('Failed to import theme. Invalid format.');
     }
   }
 

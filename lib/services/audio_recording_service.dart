@@ -26,15 +26,20 @@ class AudioRecordingService {
   /// Start recording audio for a specific slide.
   Future<bool> startRecording({int slideIndex = 0}) async {
     if (_isRecording) return false; // v1.2.0: guard against re-entrant
+    // Claim the recording state BEFORE any await so two near-simultaneous
+    // calls cannot both pass the guard and tear each other's state down.
+    _isRecording = true;
     try {
       // Clean up any leftover stream/timer from previous session
       _durationTimer?.cancel();
       _durationTimer = null;
       await _durationStreamController?.close();
+      _durationStreamController = null;
 
       final hasPermission = await _recorder.hasPermission();
       if (!hasPermission) {
         debugPrint('Microphone permission denied');
+        _isRecording = false;
         return false;
       }
 
@@ -56,8 +61,6 @@ class AudioRecordingService {
         path: _currentPath!,
       );
 
-      _isRecording = true;
-
       // Duration timer
       _durationStreamController = StreamController<int>.broadcast();
       _durationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -69,6 +72,8 @@ class AudioRecordingService {
       return true;
     } catch (e) {
       debugPrint('AudioRecordingService Error starting: $e');
+      _isRecording = false;
+      _isPaused = false;
       return false;
     }
   }
@@ -95,8 +100,16 @@ class AudioRecordingService {
       }
       return _currentPath; // fallback
     } catch (e) {
+      // The recorder threw (mic unplugged, device error) — release the timer
+      // and controller here too, otherwise the periodic timer keeps firing
+      // forever and the stream controller leaks.
       debugPrint('AudioRecordingService Error stopping: $e');
       _isRecording = false;
+      _isPaused = false;
+      _durationTimer?.cancel();
+      _durationTimer = null;
+      await _durationStreamController?.close();
+      _durationStreamController = null;
       return null;
     }
   }
@@ -140,15 +153,24 @@ class AudioRecordingService {
       if (!await audioDir.exists()) return [];
 
       final files = await audioDir.list().where((f) => f is File && f.path.endsWith('.wav')).toList();
-      return files.map((f) {
-        final stat = File(f.path).statSync();
-        return AudioFileInfo(
-          path: f.path,
-          fileName: p.basename(f.path),
-          sizeBytes: stat.size,
-          modified: stat.modified,
-        );
-      }).toList();
+      final result = <AudioFileInfo>[];
+      for (final f in files) {
+        try {
+          // statSync on a file that was just deleted/being-written throws;
+          // skip that entry instead of aborting the whole listing (which
+          // previously made the UI show "no recordings").
+          final stat = File(f.path).statSync();
+          result.add(AudioFileInfo(
+            path: f.path,
+            fileName: p.basename(f.path),
+            sizeBytes: stat.size,
+            modified: stat.modified,
+          ));
+        } catch (_) {
+          // file vanished mid-listing — skip
+        }
+      }
+      return result;
     } catch (e) {
       debugPrint('AudioRecordingService Error listing: $e');
       return [];

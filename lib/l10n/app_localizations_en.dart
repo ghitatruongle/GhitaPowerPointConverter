@@ -57,6 +57,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get present => 'Present';
 
   @override
+  String get presentFromCurrent => 'From Current';
+
+  @override
   String get presentation => 'Presentation';
 
   @override

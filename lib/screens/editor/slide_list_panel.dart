@@ -187,7 +187,10 @@ class SlideListPanel extends StatelessWidget {
         final isSelected = index == editorState.selectedSlideIndex;
 
         return _SlideThumbnailCard(
-          key: ValueKey('slide_${slide.timestamp}_$index'),
+          // timestamp is documented as the stable identity of a slide — do
+          // NOT include the index or every reorder/delete rebuilds the list
+          // with fresh keys (kills drag animations, loses drag tracking).
+          key: ValueKey(slide.timestamp),
           slide: slide,
           index: index,
           isSelected: isSelected,
@@ -209,7 +212,11 @@ class SlideListPanel extends StatelessWidget {
       BuildContext context, PresentationState state, int index) {
     final slide = state.slides[index];
     final title = slide.title;
+    final editorState = Provider.of<EditorState>(context, listen: false);
     state.removeSlide(index);
+    // Fix up any selection/editing referencing the deleted slide so we never
+    // update a different slide or touch an out-of-range index.
+    editorState.handleSlideRemoved(index, state.slides.length);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -217,8 +224,11 @@ class SlideListPanel extends StatelessWidget {
         action: SnackBarAction(
           label: 'Undo',
           onPressed: () {
-            state.addSlide(slide.copyWith(
-                timestamp: DateTime.now().millisecondsSinceEpoch));
+            // Restore at the ORIGINAL position (not appended at the end).
+            state.insertSlide(
+                index,
+                slide.copyWith(
+                    timestamp: DateTime.now().millisecondsSinceEpoch));
           },
         ),
       ),

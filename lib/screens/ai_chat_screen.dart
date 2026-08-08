@@ -82,7 +82,11 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedProvider = widget.aiProviderManager.selectedProvider;
+    // Rebuild the header whenever the manager notifies (provider change,
+    // model edit, etc.) — reading via Provider keeps the displayed name/model
+    // in sync instead of going stale until the next external rebuild.
+    final aiManager = Provider.of<AIProviderManager>(context);
+    final selectedProvider = aiManager.selectedProvider;
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -182,6 +186,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
                       final List? slides = message['slides'];
 
                       return Align(
+                        key: ValueKey('msg_$index'),
                         alignment:
                             isUser ? Alignment.centerRight : Alignment.centerLeft,
                         child: Container(
@@ -575,6 +580,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
               itemBuilder: (context, index) {
                 final entry = entries[index];
                 return Card(
+                  key: ValueKey('entry_$index'),
                   margin: const EdgeInsets.symmetric(vertical: 6),
                   child: Padding(
                     padding: const EdgeInsets.all(10),

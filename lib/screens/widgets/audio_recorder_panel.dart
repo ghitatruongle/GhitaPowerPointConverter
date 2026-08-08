@@ -40,6 +40,9 @@ class _AudioRecorderPanelState extends State<AudioRecorderPanel> {
         _isPaused = false;
         _elapsedSeconds = 0;
       });
+      // Cancel any previous subscription before assigning a new one, so a
+      // re-entry cannot leak the old stream listener.
+      _durationSub?.cancel();
       _durationSub = _recorder.durationStream?.listen((seconds) {
         if (mounted) setState(() => _elapsedSeconds = seconds);
       });

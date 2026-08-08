@@ -245,6 +245,13 @@ class SlideLayout {
 
   /// Generate HTML template for this layout.
   String generateHtmlTemplate({String? title, String? content, String? subtitle}) {
+    // Escape user-provided text: titles/content with <, >, & or " previously
+    // produced broken markup or let imported content inject HTML.
+    String esc(String? s) => (s ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
     final bgColor = _defaultBgColor();
     final StringBuffer html = StringBuffer();
     html.write('<div data-bg-color="$bgColor">\n');
@@ -254,43 +261,43 @@ class SlideLayout {
         // Empty
         break;
       case SlideLayoutType.titleSlide:
-        html.write('  <h1>${title ?? 'Title'}</h1>\n');
-        html.write('  <h2>${subtitle ?? 'Subtitle'}</h2>\n');
+        html.write('  <h1>${esc(title ?? 'Title')}</h1>\n');
+        html.write('  <h2>${esc(subtitle ?? 'Subtitle')}</h2>\n');
         break;
       case SlideLayoutType.titleAndContent:
-        html.write('  <h1>${title ?? 'Title'}</h1>\n');
-        html.write('  <p>${content ?? 'Content goes here...'}</p>\n');
+        html.write('  <h1>${esc(title ?? 'Title')}</h1>\n');
+        html.write('  <p>${esc(content ?? 'Content goes here...')}</p>\n');
         break;
       case SlideLayoutType.sectionHeader:
-        html.write('  <h1>${title ?? 'Section Title'}</h1>\n');
-        html.write('  <h2>${subtitle ?? 'Section Subtitle'}</h2>\n');
+        html.write('  <h1>${esc(title ?? 'Section Title')}</h1>\n');
+        html.write('  <h2>${esc(subtitle ?? 'Section Subtitle')}</h2>\n');
         break;
       case SlideLayoutType.twoContent:
-        html.write('  <h1>${title ?? 'Title'}</h1>\n');
+        html.write('  <h1>${esc(title ?? 'Title')}</h1>\n');
         html.write('  <div style="display: flex; gap: 20px;">\n');
-        html.write('    <div style="flex: 1;"><p>${content ?? 'Left content'}</p></div>\n');
-        html.write('    <div style="flex: 1;"><p>${content ?? 'Right content'}</p></div>\n');
+        html.write('    <div style="flex: 1;"><p>${esc(content ?? 'Left content')}</p></div>\n');
+        html.write('    <div style="flex: 1;"><p>${esc(content ?? 'Right content')}</p></div>\n');
         html.write('  </div>\n');
         break;
       case SlideLayoutType.comparison:
-        html.write('  <h1>${title ?? 'Comparison'}</h1>\n');
+        html.write('  <h1>${esc(title ?? 'Comparison')}</h1>\n');
         html.write('  <div style="display: flex; gap: 20px;">\n');
         html.write('    <div style="flex: 1;"><h2>Option A</h2><p>Details...</p></div>\n');
         html.write('    <div style="flex: 1;"><h2>Option B</h2><p>Details...</p></div>\n');
         html.write('  </div>\n');
         break;
       case SlideLayoutType.titleOnly:
-        html.write('  <h1>${title ?? 'Title'}</h1>\n');
+        html.write('  <h1>${esc(title ?? 'Title')}</h1>\n');
         break;
       case SlideLayoutType.contentAndCaption:
-        html.write('  <h1>${title ?? 'Title'}</h1>\n');
+        html.write('  <h1>${esc(title ?? 'Title')}</h1>\n');
         html.write('  <div style="display: flex; gap: 20px;">\n');
-        html.write('    <div style="flex: 2;"><p>${content ?? 'Main content'}</p></div>\n');
+        html.write('    <div style="flex: 2;"><p>${esc(content ?? 'Main content')}</p></div>\n');
         html.write('    <div style="flex: 1;"><p><i>Caption text</i></p></div>\n');
         html.write('  </div>\n');
         break;
       case SlideLayoutType.pictureAndCaption:
-        html.write('  <h1>${title ?? 'Title'}</h1>\n');
+        html.write('  <h1>${esc(title ?? 'Title')}</h1>\n');
         html.write('  <div style="text-align: center; padding: 20px;">\n');
         html.write('    <p><i>[ Picture placeholder ]</i></p>\n');
         html.write('  </div>\n');

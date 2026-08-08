@@ -136,6 +136,7 @@ class _SlideSorterScreenState extends State<SlideSorterScreen> {
           final isSelected = _selectedIndexes.contains(index);
 
           return _SlideSorterCard(
+            key: ValueKey(slide.timestamp),
             slide: slide,
             index: index,
             isSelected: isSelected,
@@ -215,6 +216,7 @@ class _SlideSorterCard extends StatelessWidget {
   final VoidCallback onDoubleTap;
 
   const _SlideSorterCard({
+    super.key,
     required this.slide,
     required this.index,
     required this.isSelected,

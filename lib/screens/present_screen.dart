@@ -22,6 +22,7 @@ class _PresentScreenState extends State<PresentScreen> {
   final _controller = WebviewController();
   bool _ready = false;
   bool _failed = false;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -31,14 +32,19 @@ class _PresentScreenState extends State<PresentScreen> {
 
   Future<void> _init() async {
     try {
-      await _controller.initialize();
+      await _controller.initialize().timeout(const Duration(seconds: 30));
       await _controller.setBackgroundColor(Colors.black);
       await _controller.setPopupWindowPolicy(WebviewPopupWindowPolicy.deny);
-      await _controller.loadStringContent(
-          widget.state.buildHtmlDeck(startIndex: widget.startSlide));
+      final html = widget.state.buildHtmlDeck(startIndex: widget.startSlide);
+      await _controller.loadStringContent(html).timeout(const Duration(seconds: 30));
       if (mounted) setState(() => _ready = true);
-    } catch (_) {
-      if (mounted) setState(() => _failed = true);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _errorMessage = e.toString();
+        });
+      }
     }
   }
 
@@ -63,9 +69,25 @@ class _PresentScreenState extends State<PresentScreen> {
             children: [
               if (_failed)
                 Center(
-                  child: Text(
-                    'Present mode unavailable (WebView2 runtime not found).',
-                    style: TextStyle(color: Colors.grey.shade400),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Không thể khởi chạy trình chiếu',
+                          style: TextStyle(color: Colors.grey.shade300, fontSize: 16),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _errorMessage ?? 'Lỗi không xác định',
+                          style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
                   ),
                 )
               else if (!_ready)

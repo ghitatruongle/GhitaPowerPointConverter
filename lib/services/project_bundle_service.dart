@@ -53,6 +53,10 @@ class ProjectBundleService {
       final zipBytes = encoder.encode(archive);
       if (zipBytes != null) {
         final outputFile = File(targetPath);
+        // Ensure the target directory exists — writeAsBytes otherwise throws
+        // when saving into a folder that doesn't exist yet, and the caller
+        // only learns about it via the generic "false" return.
+        await outputFile.parent.create(recursive: true);
         await outputFile.writeAsBytes(zipBytes, flush: true);
         debugPrint('ProjectBundleService: Saved .ghita bundle to $targetPath');
         return true;

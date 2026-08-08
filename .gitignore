@@ -42,3 +42,6 @@ build/
 windows/flutter/ephemeral/
 *.pdb
 CMakeUserPresets.json
+
+# QA/temp scratch data
+/tmp/

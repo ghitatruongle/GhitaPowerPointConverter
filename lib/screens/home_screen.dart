@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 import '../providers/app_provider.dart';
 import '../providers/ai_provider_manager.dart';
 import '../providers/presentation_state.dart';
@@ -10,6 +12,7 @@ import 'present_screen.dart';
 import 'presenter_view_screen.dart';
 import 'slide_sorter_screen.dart';
 import 'editor/editor_shell.dart';
+import 'editor/editor_state.dart';
 import 'recent_projects_screen.dart';
 import 'template_studio_screen.dart';
 import 'ai_chat_screen.dart';
@@ -20,6 +23,7 @@ import 'widgets/ribbon_toolbar.dart';
 import 'widgets/quick_access_toolbar.dart';
 import 'widgets/status_bar.dart';
 import 'widgets/advanced_export_dialog.dart';
+import 'widgets/office_buttons.dart';
 import '../theme/office_colors.dart';
 import '../l10n/l10n.dart';
 
@@ -36,16 +40,22 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _showGrid = false;
   bool _showRuler = false;
   late final FocusNode _focusNode;
+  // Owned here so the ribbon toolbar, status bar and editor shell all drive
+  // the SAME editor state (previously the ribbon was never wired and its
+  // formatting buttons silently did nothing).
+  late final EditorState _editorState;
 
   @override
   void initState() {
     super.initState();
     _focusNode = FocusNode();
+    _editorState = EditorState();
   }
 
   @override
   void dispose() {
     _focusNode.dispose();
+    _editorState.dispose();
     super.dispose();
   }
 
@@ -77,6 +87,33 @@ class _HomeScreenState extends State<HomeScreen> {
         const ToggleRulerIntent();
     shortcuts[provider.getShortcut(ShortcutAction.commandPalette)] =
         const CommandPaletteIntent();
+
+    // v1.6.3: wire the remaining declared shortcuts that previously had
+    // defaults but no handler (Ctrl+D, Delete, arrows, Ctrl+G, Ctrl+A/C/V/X,
+    // Ctrl+=/-/0). Text fields keep priority for arrows/Delete/Ctrl+A/C/V/X
+    // because their own EditableText bindings sit deeper in the focus tree.
+    shortcuts[provider.getShortcut(ShortcutAction.duplicateSlide)] =
+        const DuplicateSlideIntent();
+    shortcuts[provider.getShortcut(ShortcutAction.deleteSlide)] =
+        const DeleteSlideIntent();
+    shortcuts[provider.getShortcut(ShortcutAction.previousSlide)] =
+        const PreviousSlideIntent();
+    shortcuts[provider.getShortcut(ShortcutAction.nextSlide)] =
+        const NextSlideIntent();
+    shortcuts[provider.getShortcut(ShortcutAction.goToSlide)] =
+        const GoToSlideIntent();
+    shortcuts[provider.getShortcut(ShortcutAction.selectAll)] =
+        const SelectAllIntent();
+    shortcuts[provider.getShortcut(ShortcutAction.copy)] = const CopyIntent();
+    shortcuts[provider.getShortcut(ShortcutAction.paste)] =
+        const PasteIntent();
+    shortcuts[provider.getShortcut(ShortcutAction.cut)] = const CutIntent();
+    shortcuts[provider.getShortcut(ShortcutAction.zoomIn)] =
+        const ZoomInIntent();
+    shortcuts[provider.getShortcut(ShortcutAction.zoomOut)] =
+        const ZoomOutIntent();
+    shortcuts[provider.getShortcut(ShortcutAction.zoomReset)] =
+        const ZoomResetIntent();
 
     return shortcuts;
   }
@@ -171,6 +208,142 @@ class _HomeScreenState extends State<HomeScreen> {
           return null;
         },
       ),
+
+      // ---- v1.6.3: handlers for the newly-wired shortcuts ----
+
+      DuplicateSlideIntent: CallbackAction<DuplicateSlideIntent>(
+        onInvoke: (_) {
+          if (ps.slides.isNotEmpty &&
+              ps.currentSlideIndex < ps.slides.length) {
+            ps.duplicateSlide(ps.currentSlideIndex);
+          }
+          return null;
+        },
+      ),
+      DeleteSlideIntent: CallbackAction<DeleteSlideIntent>(
+        onInvoke: (_) {
+          if (ps.slides.isEmpty) return null;
+          final idx = ps.currentSlideIndex;
+          if (idx < 0 || idx >= ps.slides.length) return null;
+          final slide = ps.slides[idx];
+          final title = slide.title;
+          ps.removeSlide(idx);
+          _editorState.handleSlideRemoved(idx, ps.slides.length);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Deleted "$title"'),
+              action: SnackBarAction(
+                label: context.l10n.undoAction,
+                onPressed: () => ps.insertSlide(
+                    idx,
+                    slide.copyWith(
+                        timestamp: DateTime.now().millisecondsSinceEpoch)),
+              ),
+            ),
+          );
+          return null;
+        },
+      ),
+      PreviousSlideIntent: CallbackAction<PreviousSlideIntent>(
+        onInvoke: (_) {
+          _navigateSlide(context, ps, -1);
+          return null;
+        },
+      ),
+      NextSlideIntent: CallbackAction<NextSlideIntent>(
+        onInvoke: (_) {
+          _navigateSlide(context, ps, 1);
+          return null;
+        },
+      ),
+      GoToSlideIntent: CallbackAction<GoToSlideIntent>(
+        onInvoke: (_) {
+          _goToSlideDialog(context, ps);
+          return null;
+        },
+      ),
+      SelectAllIntent: CallbackAction<SelectAllIntent>(
+        onInvoke: (_) {
+          if (appProvider.currentIndex != 0) return null;
+          final controller = _editorState.htmlController;
+          controller.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: controller.text.length,
+          );
+          return null;
+        },
+      ),
+      CopyIntent: CallbackAction<CopyIntent>(
+        onInvoke: (_) {
+          if (appProvider.currentIndex != 0) return null;
+          final controller = _editorState.htmlController;
+          final selection = controller.selection;
+          if (selection.isValid && selection.start < selection.end) {
+            Clipboard.setData(ClipboardData(
+                text: controller.text
+                    .substring(selection.start, selection.end)));
+          }
+          return null;
+        },
+      ),
+      CutIntent: CallbackAction<CutIntent>(
+        onInvoke: (_) {
+          if (appProvider.currentIndex != 0) return null;
+          final controller = _editorState.htmlController;
+          final selection = controller.selection;
+          if (selection.isValid && selection.start < selection.end) {
+            final text = controller.text;
+            Clipboard.setData(ClipboardData(
+                text: text.substring(selection.start, selection.end)));
+            final newText =
+                text.replaceRange(selection.start, selection.end, '');
+            controller.text = newText;
+            controller.selection =
+                TextSelection.collapsed(offset: selection.start);
+          }
+          return null;
+        },
+      ),
+      PasteIntent: CallbackAction<PasteIntent>(
+        onInvoke: (_) async {
+          if (appProvider.currentIndex != 0) return null;
+          final data = await Clipboard.getData(Clipboard.kTextPlain);
+          final text = data?.text;
+          if (text == null || text.isEmpty) return null;
+          final controller = _editorState.htmlController;
+          final selection = controller.selection;
+          if (selection.isValid &&
+              selection.start >= 0 &&
+              selection.end <= controller.text.length) {
+            final newText = controller.text
+                .replaceRange(selection.start, selection.end, text);
+            controller.text = newText;
+            controller.selection = TextSelection.collapsed(
+                offset: selection.start + text.length);
+          } else {
+            controller.text = '${controller.text}$text';
+          }
+          return null;
+        },
+      ),
+      ZoomInIntent: CallbackAction<ZoomInIntent>(
+        onInvoke: (_) {
+          _editorState.zoomIn();
+          return null;
+        },
+      ),
+      ZoomOutIntent: CallbackAction<ZoomOutIntent>(
+        onInvoke: (_) {
+          _editorState.zoomOut();
+          return null;
+        },
+      ),
+      ZoomResetIntent: CallbackAction<ZoomResetIntent>(
+        onInvoke: (_) {
+          _editorState.setZoom(1.0);
+          return null;
+        },
+      ),
     };
   }
 
@@ -190,7 +363,9 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: _buildActionsMap(appProvider, ps),
         child: Focus(
           autofocus: true,
-          child: Scaffold(
+          child: ChangeNotifierProvider.value(
+            value: _editorState,
+            child: Scaffold(
             backgroundColor:
                 isDark ? const Color(0xFF1B1A19) : OfficeColors.gray98,
             body: Semantics(
@@ -200,7 +375,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   // ===== OFFICE SIDEBAR (NavigationRail) =====
                   if (_showSidebar)
-                    _buildOfficeSidebar(context, appProvider, ps, isDark),
+                    RepaintBoundary(
+                      child: _buildOfficeSidebar(context, appProvider, ps, isDark),
+                    ),
 
                   // ===== MAIN CONTENT =====
                   Expanded(
@@ -256,11 +433,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                 setState(() => _showGrid = !_showGrid),
                             onToggleRuler: () =>
                                 setState(() => _showRuler = !_showRuler),
-                            onToggleFullscreen: () async {
-                              try {
-                                // Toggle fullscreen if window_manager is available
-                              } catch (_) {}
-                            },
+                            onToggleFullscreen: _toggleFullscreen,
+                            // Editor formatting wiring — without these the
+                            // ribbon's Bold/Italic/lists/insert actions were
+                            // silently no-ops (rendered enabled, did nothing).
+                            onInsertHtmlTag: _editorState.insertHtmlTag,
+                            onInsertHtml: _editorState.insertHtml,
+                            onExport: () => showDialog(
+                                context: context,
+                                builder: (_) => const AdvancedExportDialog()),
+                            onZoomDialog: _showZoomDialog,
                             currentSlideIndex: ps.currentSlideIndex,
                           ),
 
@@ -294,26 +476,30 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
 
                         // === STATUS BAR ===
-                        if (isEditorTab)
-                          StatusBar(
+                      if (isEditorTab)
+                        ListenableBuilder(
+                          listenable: _editorState,
+                          builder: (context, _) => StatusBar(
                             currentSlide: ps.slides.isNotEmpty
                                 ? ps.currentSlideIndex + 1
                                 : 0,
                             totalSlides: ps.slides.length,
-                            zoomLevel: 1.0,
-                            onZoomChanged: (v) {},
-                            autoSaveStatus: 'saved',
+                            zoomLevel: _editorState.zoomLevel,
+                            onZoomChanged: (v) => _editorState.setZoom(v),
+                            autoSaveStatus: ps.exportStatus ?? 'saved',
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 
   // ===========================================================================
@@ -388,7 +574,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                _OfficeSidebarItem(
+                OfficeSidebarItem(
                   icon: Icons.edit_note,
                   label: context.l10n.editorTitle,
                   tooltip: '${context.l10n.editorTitle} (Ctrl+1)',
@@ -396,7 +582,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: () => appProvider.updateIndex(0),
                   isDark: isDark,
                 ),
-                _OfficeSidebarItem(
+                OfficeSidebarItem(
                   icon: Icons.folder_outlined,
                   label: context.l10n.projectsTitle,
                   tooltip: context.l10n.recentProjects,
@@ -404,7 +590,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: () => appProvider.updateIndex(1),
                   isDark: isDark,
                 ),
-                _OfficeSidebarItem(
+                OfficeSidebarItem(
                   icon: Icons.style_outlined,
                   label: context.l10n.templatesTitle,
                   tooltip: context.l10n.templatesTitle,
@@ -412,7 +598,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: () => appProvider.updateIndex(2),
                   isDark: isDark,
                 ),
-                _OfficeSidebarItem(
+                OfficeSidebarItem(
                   icon: Icons.smart_toy_outlined,
                   label: context.l10n.aiChatTitle,
                   tooltip: context.l10n.aiChat,
@@ -420,7 +606,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: () => appProvider.updateIndex(3),
                   isDark: isDark,
                 ),
-                _OfficeSidebarItem(
+                OfficeSidebarItem(
                   icon: Icons.settings_outlined,
                   label: context.l10n.settingsTitle,
                   tooltip: context.l10n.settingsTitle,
@@ -435,11 +621,11 @@ class _HomeScreenState extends State<HomeScreen> {
           // === Bottom actions ===
           Container(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Column(
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 // New Slide button
-                _OfficeSidebarButton(
+                OfficeSidebarButton(
                   icon: Icons.add_circle_outline,
                   tooltip: context.l10n.newSlide,
                   onTap: () {
@@ -453,7 +639,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 4),
                 // Theme toggle
-                _OfficeSidebarButton(
+                OfficeSidebarButton(
                   icon: isDark
                       ? Icons.light_mode_outlined
                       : Icons.dark_mode_outlined,
@@ -465,7 +651,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 4),
                 // Collapse sidebar
-                _OfficeSidebarButton(
+                OfficeSidebarButton(
                   icon: Icons.menu_open,
                   tooltip: context.l10n.hideSidebar,
                   onTap: () => setState(() => _showSidebar = false),
@@ -508,7 +694,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (!_showSidebar)
             Padding(
               padding: const EdgeInsets.only(right: 4),
-              child: _OfficeHeaderButton(
+              child: OfficeHeaderButton(
                 icon: Icons.menu,
                 tooltip: context.l10n.showSidebar,
                 onTap: () => setState(() => _showSidebar = true),
@@ -568,19 +754,19 @@ class _HomeScreenState extends State<HomeScreen> {
           const Spacer(),
 
           // Action buttons (Office style)
-          _OfficeHeaderButton(
+          OfficeHeaderButton(
             icon: Icons.search,
             tooltip: '${context.l10n.search} (Ctrl+K)',
             onTap: () => _openCommandPalette(context),
             isDark: isDark,
           ),
-          _OfficeHeaderButton(
+          OfficeHeaderButton(
             icon: Icons.keyboard_outlined,
             tooltip: context.l10n.shortcuts,
             onTap: () => _openShortcutsHelp(context),
             isDark: isDark,
           ),
-          _OfficeHeaderButton(
+          OfficeHeaderButton(
             icon: Icons.help_outline,
             tooltip: context.l10n.help,
             onTap: () {
@@ -665,262 +851,136 @@ class _HomeScreenState extends State<HomeScreen> {
           state: state, startSlide: state.currentSlideIndex),
     ));
   }
-}
 
-// =============================================================================
-// OFFICE SIDEBAR ITEM (72px wide, Office 365 style)
-// =============================================================================
-class _OfficeSidebarItem extends StatefulWidget {
-  final IconData icon;
-  final String label;
-  final String? tooltip;
-  final bool isSelected;
-  final VoidCallback onTap;
-  final bool isDark;
-
-  const _OfficeSidebarItem({
-    required this.icon,
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-    required this.isDark,
-    this.tooltip,
-  });
-
-  @override
-  State<_OfficeSidebarItem> createState() => _OfficeSidebarItemState();
-}
-
-class _OfficeSidebarItemState extends State<_OfficeSidebarItem> {
-  bool _isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    Color? bgColor;
-    Color iconColor;
-    Color labelColor;
-
-    if (widget.isSelected) {
-      bgColor = widget.isDark
-          ? const Color(0xFF1B3A4F)
-          : OfficeColors.officeBlueLight;
-      iconColor =
-          widget.isDark ? const Color(0xFF50B8F4) : OfficeColors.officeBlue;
-      labelColor =
-          widget.isDark ? const Color(0xFF50B8F4) : OfficeColors.officeBlue;
-    } else if (_isHovered) {
-      bgColor = widget.isDark ? OfficeColors.gray30 : OfficeColors.gray90;
-      iconColor = widget.isDark ? OfficeColors.gray90 : OfficeColors.gray20;
-      labelColor = widget.isDark ? OfficeColors.gray90 : OfficeColors.gray30;
-    } else {
-      bgColor = Colors.transparent;
-      iconColor = widget.isDark ? OfficeColors.gray60 : OfficeColors.gray40;
-      labelColor = widget.isDark ? OfficeColors.gray60 : OfficeColors.gray40;
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-      child: Material(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(4),
-        child: Tooltip(
-          message: widget.tooltip ?? widget.label,
-          waitDuration: const Duration(milliseconds: 600),
-          preferBelow: false,
-          child: Semantics(
-            label: widget.tooltip ?? widget.label,
-            button: true,
-            selected: widget.isSelected,
-            onTap: widget.onTap,
-            child: ExcludeSemantics(
-              child: InkWell(
-                onTap: widget.onTap,
-                onHover: (hovered) => setState(() => _isHovered = hovered),
-                borderRadius: BorderRadius.circular(4),
-                child: SizedBox(
-                  height: 48,
-                  child: Row(
-                    children: [
-                      // Left accent bar for selected item
-                      if (widget.isSelected)
-                        Container(
-                          width: 3,
-                          height: 24,
-                          margin: const EdgeInsets.only(left: 2, right: 2),
-                          decoration: BoxDecoration(
-                            color: widget.isDark
-                                ? const Color(0xFF50B8F4)
-                                : OfficeColors.officeBlue,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        )
-                      else
-                        const SizedBox(width: 7),
-                      // Icon and label
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(widget.icon, size: 20, color: iconColor),
-                            const SizedBox(height: 2),
-                            Text(
-                              widget.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: widget.isSelected
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                                color: labelColor,
-                                fontFamily: 'Segoe UI',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+  /// Zoom control for the editor (View tab ribbon button). Shares the same
+  /// zoom state as the editor preview.
+  Future<void> _showZoomDialog() {
+    return showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Zoom'),
+          content: SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('${(_editorState.zoomLevel * 100).round()}%',
+                    style: Theme.of(context).textTheme.titleLarge),
+                Slider(
+                  min: 0.5,
+                  max: 2.0,
+                  divisions: 30,
+                  value: _editorState.zoomLevel,
+                  onChanged: (v) {
+                    _editorState.setZoom(v);
+                    setDialogState(() {});
+                  },
                 ),
-              ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      onPressed: () => _editorState.zoomOut(),
+                      child: const Text('−'),
+                    ),
+                    TextButton(
+                      onPressed: () => _editorState.setZoom(1.0),
+                      child: const Text('100%'),
+                    ),
+                    TextButton(
+                      onPressed: () => _editorState.zoomIn(),
+                      child: const Text('+'),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(context.l10n.close),
+            ),
+          ],
         ),
       ),
     );
   }
-}
 
-// =============================================================================
-// OFFICE SIDEBAR BUTTON (icon-only, square)
-// =============================================================================
-class _OfficeSidebarButton extends StatefulWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-  final bool isDark;
-
-  const _OfficeSidebarButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-    required this.isDark,
-  });
-
-  @override
-  State<_OfficeSidebarButton> createState() => _OfficeSidebarButtonState();
-}
-
-class _OfficeSidebarButtonState extends State<_OfficeSidebarButton> {
-  bool _isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    Color bgColor;
-    Color iconColor;
-
-    if (_isHovered) {
-      bgColor = widget.isDark ? OfficeColors.gray30 : OfficeColors.gray90;
-      iconColor = widget.isDark ? OfficeColors.gray90 : OfficeColors.gray20;
-    } else {
-      bgColor = Colors.transparent;
-      iconColor = widget.isDark ? OfficeColors.gray60 : OfficeColors.gray40;
+  /// Toggle the window between windowed and fullscreen (window_manager).
+  Future<void> _toggleFullscreen() async {
+    try {
+      if (await windowManager.isFullScreen()) {
+        await windowManager.setFullScreen(false);
+      } else {
+        await windowManager.setFullScreen(true);
+      }
+    } catch (_) {
+      // window_manager not initialized (e.g. tests) — ignore silently.
     }
-
-    return Tooltip(
-      message: widget.tooltip,
-      child: Semantics(
-        label: widget.tooltip,
-        button: true,
-        onTap: widget.onTap,
-        child: ExcludeSemantics(
-          child: Container(
-            width: 36,
-            height: 36,
-            margin: const EdgeInsets.symmetric(vertical: 2),
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: IconButton(
-              icon: Icon(widget.icon, size: 18, color: iconColor),
-              onPressed: widget.onTap,
-              onHover: (hovered) => setState(() => _isHovered = hovered),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-              tooltip: widget.tooltip,
-            ),
-          ),
-        ),
-      ),
-    );
   }
-}
 
-// =============================================================================
-// OFFICE HEADER BUTTON (32x32, title bar actions)
-// =============================================================================
-class _OfficeHeaderButton extends StatefulWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-  final bool isDark;
+  /// Navigate [delta] slides from the current one (arrow-key shortcuts).
+  /// Only when the editor tab is active; text fields keep priority for
+  /// arrows via their own deeper bindings.
+  void _navigateSlide(BuildContext context, PresentationState ps, int delta) {
+    if (ps.slides.isEmpty) return;
+    final target = ps.currentSlideIndex + delta;
+    if (target < 0 || target >= ps.slides.length) return;
+    ps.setCurrentSlide(target);
+    _editorState.selectSlide(target);
+    _editorState.editSlide(target, ps);
+  }
 
-  const _OfficeHeaderButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-    required this.isDark,
-  });
-
-  @override
-  State<_OfficeHeaderButton> createState() => _OfficeHeaderButtonState();
-}
-
-class _OfficeHeaderButtonState extends State<_OfficeHeaderButton> {
-  bool _isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    Color? bgColor;
-    Color iconColor;
-
-    if (_isHovered) {
-      bgColor = widget.isDark ? OfficeColors.gray30 : OfficeColors.gray90;
-      iconColor = widget.isDark ? OfficeColors.gray90 : OfficeColors.gray20;
-    } else {
-      bgColor = Colors.transparent;
-      iconColor = widget.isDark ? OfficeColors.gray60 : OfficeColors.gray40;
-    }
-
-    return Tooltip(
-      message: widget.tooltip,
-      child: Semantics(
-        label: widget.tooltip,
-        button: true,
-        onTap: widget.onTap,
-        child: ExcludeSemantics(
-          child: Container(
-            width: 32,
-            height: 32,
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(2),
-            ),
-            child: IconButton(
-              icon: Icon(widget.icon, size: 16, color: iconColor),
-              onPressed: widget.onTap,
-              onHover: (hovered) => setState(() => _isHovered = hovered),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-              tooltip: widget.tooltip,
-            ),
+  /// Show a dialog to jump to a specific slide number (Ctrl+G).
+  Future<void> _goToSlideDialog(BuildContext context, PresentationState ps) async {
+    if (ps.slides.isEmpty) return;
+    final controller = TextEditingController(
+        text: '${ps.currentSlideIndex + 1}');
+    final result = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Go to slide'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: 'Slide number (1-${ps.slides.length})',
+            isDense: true,
           ),
+          onSubmitted: (value) {
+            final n = int.tryParse(value);
+            if (n != null && n >= 1 && n <= ps.slides.length) {
+              Navigator.pop(context, n);
+            }
+          },
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(context.l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () {
+              final n = int.tryParse(controller.text);
+              if (n != null && n >= 1 && n <= ps.slides.length) {
+                Navigator.pop(context, n);
+              }
+            },
+            child: const Text('Go'),
+          ),
+        ],
       ),
     );
+    controller.dispose();
+    if (result != null) {
+      final target = result - 1;
+      ps.setCurrentSlide(target);
+      _editorState.selectSlide(target);
+      _editorState.editSlide(target, ps);
+    }
   }
 }
 

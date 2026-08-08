@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.6.3+2] - 2026-08-08 — Bản vá nhỏ: ổn định trình chiếu, tối ưu RAM và UI
+
+### 🐛 Đã sửa
+- **Trình chiếu không chạy**: bỏ catch-all lỗi trong `PresentScreen`, hiển thị thông báo lỗi thực tế và thêm timeout 30s cho WebView2 để tránh treo.
+- **Lỗi khởi tạo WebView**: bổ sung fallback thông báo rõ ràng khi WebView2 không khả dụng.
+
+### ⚡ Tối ưu
+- **RAM**: tái sử dụng `HtmlExportService` trong `buildHtmlDeck()` và giới hạn ảnh nhúng tối đa 1200px, giảm áp lực bộ nhớ khi trình chiếu.
+- **Giao diện**: tách các widget nút lặp lại (`OfficeSidebarItem`, `OfficeSidebarButton`, `OfficeHeaderButton`) ra file riêng, thêm `RepaintBoundary` cho sidebar.
+
+### 🚀 Tiện ích
+- Thêm nút **"From Current"** (Present From Current) vào thanh công cụ trình soạn thảo.
+- Bổ sung chuỗi dịch `presentFromCurrent` cho EN/VI.
+
+### 📦 Dependencies
+- **Version**: `1.5.3+2`
+
+---
+
 ## [1.6.0+1] - 2026-08-05 — Bản phát hành nội bộ: bản địa hoá
 
 ### Đã thay đổi

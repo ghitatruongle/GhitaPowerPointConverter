@@ -140,7 +140,13 @@ class ThemeProvider with ChangeNotifier {
   /// Supports both 8-digit ARGB (#AARRGGBB) and 6-digit RGB (#RRGGBB) formats.
   Color _hexToColor(String hex) {
     try {
-      var cleaned = hex.replaceFirst('#', '');
+      var cleaned = hex.trim().replaceFirst(RegExp(r'^#'), '');
+      // Validate strictly: 3/4/5/7-digit hex previously parsed into garbage
+      // colors (e.g. 'FFF' became nearly-transparent) or threw. Only accept
+      // real 6- or 8-digit values, otherwise fall back to the default.
+      if (!RegExp(r'^[0-9A-Fa-f]{6}$|^[0-9A-Fa-f]{8}$').hasMatch(cleaned)) {
+        return OfficeColors.officeBlue;
+      }
       // If only 6 digits (RGB), treat as fully opaque to avoid transparent color
       if (cleaned.length == 6) {
         cleaned = 'FF$cleaned';
@@ -154,29 +160,34 @@ class ThemeProvider with ChangeNotifier {
 
   /// Load theme từ SharedPreferences
   Future<void> _loadTheme() async {
-    final prefs = await SharedPreferences.getInstance();
+    try {
+      final prefs = await SharedPreferences.getInstance();
 
-    final primaryHex = prefs.getString('theme_primary_color');
-    if (primaryHex != null) {
-      _primaryColor = _hexToColor(primaryHex);
-    }
+      final primaryHex = prefs.getString('theme_primary_color');
+      if (primaryHex != null) {
+        _primaryColor = _hexToColor(primaryHex);
+      }
 
-    final accentHex = prefs.getString('theme_accent_color');
-    if (accentHex != null) {
-      _accentColor = _hexToColor(accentHex);
-    }
+      final accentHex = prefs.getString('theme_accent_color');
+      if (accentHex != null) {
+        _accentColor = _hexToColor(accentHex);
+      }
 
-    final font = prefs.getString('theme_font_family');
-    if (font != null) {
-      _fontFamily = font;
-    }
+      final font = prefs.getString('theme_font_family');
+      if (font != null) {
+        _fontFamily = font;
+      }
 
-    final presetName = prefs.getString('theme_preset');
-    if (presetName != null) {
-      _presetTheme = PresetTheme.values.firstWhere(
-        (p) => p.name == presetName,
-        orElse: () => PresetTheme.officeBlue,
-      );
+      final presetName = prefs.getString('theme_preset');
+      if (presetName != null) {
+        _presetTheme = PresetTheme.values.firstWhere(
+          (p) => p.name == presetName,
+          orElse: () => PresetTheme.officeBlue,
+        );
+      }
+    } catch (e) {
+      // A prefs failure must never crash startup — keep the defaults.
+      debugPrint('ThemeProvider: failed to load theme: $e');
     }
 
     _isLoaded = true;
@@ -185,10 +196,14 @@ class ThemeProvider with ChangeNotifier {
 
   /// Save theme vào SharedPreferences
   Future<void> _saveTheme() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('theme_primary_color', _colorToHex(_primaryColor));
-    await prefs.setString('theme_accent_color', _colorToHex(_accentColor));
-    await prefs.setString('theme_font_family', _fontFamily);
-    await prefs.setString('theme_preset', _presetTheme.name);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('theme_primary_color', _colorToHex(_primaryColor));
+      await prefs.setString('theme_accent_color', _colorToHex(_accentColor));
+      await prefs.setString('theme_font_family', _fontFamily);
+      await prefs.setString('theme_preset', _presetTheme.name);
+    } catch (e) {
+      debugPrint('ThemeProvider: failed to save theme: $e');
+    }
   }
 }

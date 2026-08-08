@@ -72,15 +72,18 @@ class HtmlExportService {
   ///
   /// [startIndex] selects the first visible slide (for "Present From Current");
   /// [autoAdvance] enables automatic slide advancement in the embedded player.
+  /// [imageMaxWidth] limits the width of embedded images to reduce memory usage.
   String buildPresentationHtml(
     List<Map<String, dynamic>> slides, {
     int startIndex = 0,
     Duration? autoAdvance,
+    int? imageMaxWidth,
   }) {
     return _buildHtmlPresentation(
       slides,
       startIndex: startIndex,
       autoAdvance: autoAdvance,
+      imageMaxWidth: imageMaxWidth,
     );
   }
 

@@ -20,33 +20,18 @@ class WifiBroadcasterService {
         _server = await HttpServer.bind(InternetAddress.anyIPv4, _serverPort);
         debugPrint('WifiBroadcasterService running on port $_serverPort');
 
-        _server?.listen((HttpRequest request) {
-          request.response.headers.contentType = ContentType('text', 'html', charset: 'utf-8');
-          final htmlPage = '''
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Live Presentation Broadcaster</title>
-  <style>
-    body { font-family: system-ui, sans-serif; background: #0f172a; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 24px; box-sizing: border-box; }
-    .card { background: #1e293b; border-radius: 16px; padding: 32px; width: 100%; max-width: 900px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-  </style>
-  <script>
-    setTimeout(function() { location.reload(); }, 3000);
-  </script>
-</head>
-<body>
-  <div class="card">
-    $_currentSlideHtml
-  </div>
-</body>
-</html>
-''';
-          request.response.write(htmlPage);
-          request.response.close();
-        });
+_server?.listen(
+          (HttpRequest request) {
+            _handleBroadcastRequest(request).catchError((e) {
+              // A viewer that aborts mid-write must not surface as an unhandled
+              // stream error (previously it crashed the app).
+              debugPrint('WifiBroadcasterService: request error: $e');
+            });
+          },
+          onError: (e) {
+            debugPrint('WifiBroadcasterService: server error: $e');
+          },
+        );
 
         // Bind succeeded — break out of the port-fallback loop.
         break;
@@ -87,5 +72,36 @@ class WifiBroadcasterService {
     await _server?.close(force: true);
     _server = null;
     debugPrint('WifiBroadcasterService stopped.');
+  }
+
+  /// Serve a single broadcast request. Extracted so its errors can be caught
+  /// per-request (a viewer aborting mid-write no longer crashes the app).
+  Future<void> _handleBroadcastRequest(HttpRequest request) async {
+    request.response.headers.contentType =
+        ContentType('text', 'html', charset: 'utf-8');
+    final htmlPage = '''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Presentation Broadcaster</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 24px; box-sizing: border-box; }
+    .card { background: #1e293b; border-radius: 16px; padding: 32px; width: 100%; max-width: 900px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+  </style>
+  <script>
+    setTimeout(function() { location.reload(); }, 3000);
+  </script>
+</head>
+<body>
+  <div class="card">
+    $_currentSlideHtml
+  </div>
+</body>
+</html>
+''';
+    request.response.write(htmlPage);
+    await request.response.close();
   }
 }

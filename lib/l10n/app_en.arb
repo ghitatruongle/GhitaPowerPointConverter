@@ -19,6 +19,7 @@
     "undo": "Undo",
     "redo": "Redo",
     "present": "Present",
+    "presentFromCurrent": "From Current",
     "presentation": "Presentation",
     "slides": "Slides",
     "slideCount": "Slides ({count})",

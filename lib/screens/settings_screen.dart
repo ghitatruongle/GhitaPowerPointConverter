@@ -233,6 +233,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                   const Divider(height: 24),
+                  // Evict controllers for providers that no longer exist so
+                  // removed providers don't leak TextEditingController
+                  // instances across add/remove cycles.
+                  ..._evictStaleKeyControllers(aiManager),
                   ...aiManager.providers.map((p) {
                     final controller = _keyControllers.putIfAbsent(
                         p.id, () => TextEditingController(text: p.apiKey));
@@ -507,6 +511,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!context.mounted) return;
       ErrorMapper.showErrorSnackBar(context, e);
     }
+  }
+
+  /// Dispose TextEditingControllers belonging to providers that no longer
+/// exist, so removed providers don't leak controllers across cycles.
+  Iterable<Widget> _evictStaleKeyControllers(AIProviderManager aiManager) {
+    for (final id in List.of(_keyControllers.keys)) {
+      if (!aiManager.providers.any((p) => p.id == id)) {
+        final removed = _keyControllers.remove(id);
+        removed?.dispose();
+      }
+    }
+    return const <Widget>[];
   }
 
   String _themeLabel(ThemeMode mode, AppLocalizations l10n) {

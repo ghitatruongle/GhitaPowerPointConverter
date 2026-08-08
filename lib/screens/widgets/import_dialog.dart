@@ -55,15 +55,15 @@ class _ImportDialogState extends State<ImportDialog> {
     setState(() => _isLoading = true);
     try {
       final slides = await _importer.importFromWebUrl(url);
+      if (!mounted) return; // dialog may have been closed mid-fetch
       setState(() {
         _previewSlides = slides;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
-      if (mounted) {
-        ErrorMapper.showErrorSnackBar(context, e);
-      }
+      ErrorMapper.showErrorSnackBar(context, e);
     }
   }
 

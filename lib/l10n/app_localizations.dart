@@ -194,6 +194,12 @@ abstract class AppLocalizations {
   /// **'Present'**
   String get present;
 
+  /// No description provided for @presentFromCurrent.
+  ///
+  /// In en, this message translates to:
+  /// **'From Current'**
+  String get presentFromCurrent;
+
   /// No description provided for @presentation.
   ///
   /// In en, this message translates to:

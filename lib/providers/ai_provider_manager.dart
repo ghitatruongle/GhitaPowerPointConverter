@@ -265,6 +265,19 @@ class AIProviderManager with ChangeNotifier {
   // Shared HTTP client for connection pooling (v1.2.0)
   final http.Client _sharedClient = http.Client();
 
+  /// POST through the shared client with a hard deadline so a stalled
+  /// provider can never hang generation forever (previously no timeout at
+  /// all on any non-streaming call).
+  Future<http.Response> _postWithTimeout(
+    Uri url, {
+    Map<String, String>? headers,
+    Object? body,
+  }) {
+    return _sharedClient
+        .post(url, headers: headers, body: body)
+        .timeout(const Duration(seconds: 30));
+  }
+
   // Health monitoring timer (v1.2.0)
   Timer? _healthTimer;
   bool _disposed = false;
@@ -409,7 +422,9 @@ class AIProviderManager with ChangeNotifier {
   }
 
   Future<void> _performHealthChecks() async {
-    for (final provider in _providers) {
+    // Iterate a snapshot: addProvider/removeProvider during an await would
+    // otherwise throw ConcurrentModificationError mid-loop.
+    for (final provider in List.of(_providers)) {
       if (_disposed) return; // v1.2.0: return, not just break
       await testProviderPing(provider);
       if (_disposed) return; // re-check after await
@@ -467,7 +482,10 @@ class AIProviderManager with ChangeNotifier {
     try {
       final List<String> fetchedModels = [];
       if (config.formatType == 'gemini') {
-        final url = Uri.parse('${config.baseUrl}/v1beta/models?key=${config.apiKey}');
+        // Percent-encode the key via queryParameters — interpolating the raw
+        // key into the URL breaks keys containing '+', '&' or '/'.
+        final url = Uri.parse('${config.baseUrl}/v1beta/models')
+            .replace(queryParameters: {'key': config.apiKey});
         final res = await _sharedClient.get(url).timeout(const Duration(seconds: 5));
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body);
@@ -776,7 +794,9 @@ class AIProviderManager with ChangeNotifier {
             });
       }
 
-      final response = await client.send(request);
+      final response = await client
+          .send(request)
+          .timeout(const Duration(seconds: 30));
       if (response.statusCode != 200) {
         final body = await response.stream.bytesToString();
         throw Exception(_friendlyErrorMessage(response.statusCode, body));
@@ -785,7 +805,9 @@ class AIProviderManager with ChangeNotifier {
       // Parse SSE lines across chunk boundaries.
       // v1.2.0: Also handle Anthropic event: lines
       var buffer = '';
-      await for (final chunk in response.stream.transform(utf8.decoder)) {
+      await for (final chunk in response.stream
+          .transform(utf8.decoder)
+          .timeout(const Duration(seconds: 30))) {
         buffer += chunk;
         final lines = buffer.split('\n');
         buffer = lines.removeLast();
@@ -910,7 +932,7 @@ class AIProviderManager with ChangeNotifier {
 
   Future<String> _callOpenAI(AIProviderConfig config, String prompt, {String? systemPrompt}) async {
     try {
-      final response = await _sharedClient.post(
+      final response = await _postWithTimeout(
         Uri.parse('${config.baseUrl}/v1/chat/completions'),
         headers: {
           'Authorization': 'Bearer ${config.apiKey}',
@@ -951,7 +973,7 @@ class AIProviderManager with ChangeNotifier {
 
   Future<String> _callOpenAIMulti(AIProviderConfig config, String topic, String systemPrompt) async {
     try {
-      final response = await _sharedClient.post(
+      final response = await _postWithTimeout(
         Uri.parse('${config.baseUrl}/v1/chat/completions'),
         headers: {
           'Authorization': 'Bearer ${config.apiKey}',
@@ -993,7 +1015,7 @@ class AIProviderManager with ChangeNotifier {
 
   Future<String> _callAnthropic(AIProviderConfig config, String prompt, {String? systemPrompt}) async {
     try {
-      final response = await _sharedClient.post(
+      final response = await _postWithTimeout(
         Uri.parse('${config.baseUrl}/v1/messages'),
         headers: {
           'x-api-key': config.apiKey,
@@ -1033,7 +1055,7 @@ class AIProviderManager with ChangeNotifier {
 
   Future<String> _callAnthropicMulti(AIProviderConfig config, String topic, String systemPrompt) async {
     try {
-      final response = await _sharedClient.post(
+      final response = await _postWithTimeout(
         Uri.parse('${config.baseUrl}/v1/messages'),
         headers: {
           'x-api-key': config.apiKey,
@@ -1092,7 +1114,7 @@ class AIProviderManager with ChangeNotifier {
 
   Future<String> _callGemini(AIProviderConfig config, String userText, String systemPrompt) async {
     try {
-      final response = await _sharedClient.post(
+      final response = await _postWithTimeout(
         Uri.parse('${config.baseUrl}/v1beta/models/${config.selectedModel}:generateContent'),
         headers: {
           'x-goog-api-key': config.apiKey,

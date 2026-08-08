@@ -16,6 +16,7 @@
     "undo": "Hoàn Tác",
     "redo": "Làm Lại",
     "present": "Trình Chiếu",
+    "presentFromCurrent": "Từ Slide Hiện Tại",
     "presentation": "Bài Thuyết Trình",
     "slides": "Slides",
     "slideCount": "Slides ({count})",

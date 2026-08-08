@@ -186,6 +186,8 @@ class _ImageEditorDialogState extends State<ImageEditorDialog> {
                                     keyboardType: TextInputType.number,
                                     onSubmitted: (value) {
                                       final w = int.tryParse(value) ?? 0;
+                                      // A 0 dimension means "auto" — only resize when
+                                      // a real value is given, otherwise skip.
                                       if (w > 0) _applyResize(w, 0);
                                     },
                                   ),

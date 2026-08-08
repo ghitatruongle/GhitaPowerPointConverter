@@ -201,14 +201,18 @@ class _RibbonToolbarState extends State<RibbonToolbar>
                       label: 'Cut',
                       compact: true,
                       tooltip: 'Cut (Ctrl+X)',
-                      onPressed: () async {
-                        // Cut = Copy selection + delete
-                        // We trigger system cut via keyboard shortcut simulation
-                        await Clipboard.setData(const ClipboardData(text: ''));
-                        if (widget.onInsertHtmlTag != null) {
-                          // Signal to editor: cut current selection
-                          widget.onInsertHtmlTag!('', '');
-                        }
+                      onPressed: () {
+                        // NOTE: a real cut needs the HTML editor's current
+                        // selection. This must NOT wipe the user's clipboard
+                        // with an empty string (previous bug did exactly that)
+                        // — the system Ctrl+X inside the editor is the
+                        // reliable path.
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Chọn text trong editor rồi Ctrl+X'),
+                            duration: Duration(seconds: 1),
+                          ),
+                        );
                       },
                     ),
                     _RibbonButton(
@@ -320,7 +324,7 @@ class _RibbonToolbarState extends State<RibbonToolbar>
                       tooltip: 'Align Left',
                       compact: true,
                       onPressed: () => widget.onInsertHtml?.call(
-                        '<div style="text-align: left">',
+                        '<div style="text-align: left">\n\n</div>',
                       ),
                     ),
                     _RibbonButton(
@@ -328,7 +332,7 @@ class _RibbonToolbarState extends State<RibbonToolbar>
                       tooltip: 'Align Center',
                       compact: true,
                       onPressed: () => widget.onInsertHtml?.call(
-                        '<div style="text-align: center">',
+                        '<div style="text-align: center">\n\n</div>',
                       ),
                     ),
                     _RibbonButton(
@@ -336,7 +340,7 @@ class _RibbonToolbarState extends State<RibbonToolbar>
                       tooltip: 'Align Right',
                       compact: true,
                       onPressed: () => widget.onInsertHtml?.call(
-                        '<div style="text-align: right">',
+                        '<div style="text-align: right">\n\n</div>',
                       ),
                     ),
                   ],

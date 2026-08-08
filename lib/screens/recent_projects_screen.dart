@@ -18,6 +18,17 @@ class _RecentProjectsScreenState extends State<RecentProjectsScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _recentProjects = [];
   bool _isLoading = true;
+  String _filter = '';
+
+  /// The list after applying the search filter (case-insensitive on name/path).
+  List<Map<String, dynamic>> get _filteredProjects {
+    if (_filter.isEmpty) return _recentProjects;
+    return _recentProjects
+        .where((p) =>
+            (p['name'] ?? '').toString().toLowerCase().contains(_filter) ||
+            (p['path'] ?? '').toString().toLowerCase().contains(_filter))
+        .toList();
+  }
 
   @override
   void initState() {
@@ -37,15 +48,18 @@ class _RecentProjectsScreenState extends State<RecentProjectsScreen> {
       final jsonStr = prefs.getString('recent_projects');
       if (jsonStr != null) {
         final list = jsonDecode(jsonStr) as List;
+        if (!mounted) return;
         setState(() {
           _recentProjects = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
           _isLoading = false;
         });
       } else {
+        if (!mounted) return;
         setState(() => _isLoading = false);
       }
     } catch (e) {
       debugPrint('Error loading recent projects: $e');
+      if (!mounted) return;
       setState(() => _isLoading = false);
     }
   }
@@ -154,6 +168,8 @@ class _RecentProjectsScreenState extends State<RecentProjectsScreen> {
                       isDense: true,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
+                    // Filter the recent-projects list live as the user types.
+                    onChanged: (value) => setState(() => _filter = value.toLowerCase()),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -264,13 +280,14 @@ class _RecentProjectsScreenState extends State<RecentProjectsScreen> {
                           ),
                         )
                       : ListView.builder(
-                      itemCount: _recentProjects.length,
+                      itemCount: _filteredProjects.length,
                       itemBuilder: (ctx, idx) {
-                        final project = _recentProjects[idx];
+                        final project = _filteredProjects[idx];
                         final openedAt = DateTime.tryParse(project['openedAt'] ?? '') ?? DateTime.now();
                         final timeAgo = _formatTimeAgo(openedAt);
 
                         return Card(
+                          key: ValueKey(project['path'] ?? idx),
                           child: ListTile(
                             leading: Icon(Icons.description, color: theme.colorScheme.primary),
                             title: Text(project['name'] ?? 'Unknown', style: const TextStyle(fontWeight: FontWeight.w600)),

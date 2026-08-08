@@ -25,10 +25,15 @@ class HistorySnapshot {
 
   factory HistorySnapshot.fromMap(Map<String, dynamic> map) {
     final rawSlides = map['slides'] as List? ?? [];
+    // Tolerate persisted JSON with string/ISO timestamps (foreign or older
+    // writers) — a TypeError here would fail the ENTIRE .ghita bundle load.
+    final rawTimestamp = map['timestamp'];
     return HistorySnapshot(
       id: (map['id'] ?? '').toString(),
       description: (map['description'] ?? 'Snapshot').toString(),
-      timestamp: map['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch,
+      timestamp: rawTimestamp is int
+          ? rawTimestamp
+          : DateTime.now().millisecondsSinceEpoch,
       slides: rawSlides.map((e) => Slide.fromMap(e as Map<String, dynamic>)).toList(),
     );
   }
@@ -39,6 +44,9 @@ class TimeMachineHistoryService {
   final List<HistorySnapshot> _snapshots = [];
   int _currentIndex = -1;
   final int maxHistoryLength;
+  // Two snapshots created in the same millisecond would otherwise share an
+  // id, corrupting key-based lookups and timeline rendering.
+  int _idSeq = 0;
 
   TimeMachineHistoryService({this.maxHistoryLength = 30});
 
@@ -55,7 +63,7 @@ class TimeMachineHistoryService {
     }
 
     final newSnapshot = HistorySnapshot(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: '${DateTime.now().millisecondsSinceEpoch}-${_idSeq++}',
       description: description,
       slides: slides.map((s) => s.copyWith()).toList(),
     );
@@ -71,10 +79,11 @@ class TimeMachineHistoryService {
   }
 
   /// Performs undo operation and returns the previous slides snapshot.
+  /// Returns a deep copy so callers can never mutate a stored snapshot.
   List<Slide>? undo() {
     if (canUndo) {
       _currentIndex--;
-      return _snapshots[_currentIndex].slides;
+      return _snapshots[_currentIndex].slides.map((s) => s.copyWith()).toList();
     }
     return null;
   }
@@ -83,7 +92,7 @@ class TimeMachineHistoryService {
   List<Slide>? redo() {
     if (canRedo) {
       _currentIndex++;
-      return _snapshots[_currentIndex].slides;
+      return _snapshots[_currentIndex].slides.map((s) => s.copyWith()).toList();
     }
     return null;
   }
@@ -92,7 +101,7 @@ class TimeMachineHistoryService {
   List<Slide>? jumpToIndex(int index) {
     if (index >= 0 && index < _snapshots.length) {
       _currentIndex = index;
-      return _snapshots[_currentIndex].slides;
+      return _snapshots[_currentIndex].slides.map((s) => s.copyWith()).toList();
     }
     return null;
   }

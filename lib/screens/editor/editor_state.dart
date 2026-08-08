@@ -123,7 +123,31 @@ class EditorState with ChangeNotifier {
         offset: selection.start + open.length + selectedText.length,
       );
     } else {
-      htmlController.text = '$text$open$close';
+      // No selection: insert the pair and place the caret between the tags so
+      // typing continues inside the newly opened element.
+      final newText = '$text$open$close';
+      htmlController.text = newText;
+      htmlController.selection = TextSelection.collapsed(
+        offset: text.length + open.length,
+      );
+    }
+  }
+
+  /// Insert raw HTML at the cursor (or append when there is no valid
+  /// selection). Used by the ribbon Insert tab.
+  void insertHtml(String html) {
+    final text = htmlController.text;
+    final selection = htmlController.selection;
+    if (selection.isValid &&
+        selection.start >= 0 &&
+        selection.end <= text.length) {
+      final newText = text.replaceRange(selection.start, selection.end, html);
+      htmlController.text = newText;
+      htmlController.selection = TextSelection.collapsed(
+        offset: selection.start + html.length,
+      );
+    } else {
+      htmlController.text = '$text$html';
     }
   }
 
@@ -158,6 +182,42 @@ class EditorState with ChangeNotifier {
   String get lastSanitizedHtml => _lastSanitizedHtml ?? '';
 
   // ---- Add / Update Slide ----
+
+  /// Begin a brand-new blank slide: appends it to the deck and opens it in the
+  /// editor for immediate editing. Used by the slide panel "+" button and the
+  /// sidebar "New Slide" action so clicking + always produces a slide.
+  void startNewSlide(BuildContext context) {
+    final state = Provider.of<PresentationState>(context, listen: false);
+    final slide = Slide(
+      title: 'New Slide',
+      htmlContent: '<h1>New Slide</h1>\n<p>Click to edit</p>',
+    );
+    state.addSlide(slide);
+    final newIndex = state.slides.length - 1;
+    state.setCurrentSlide(newIndex);
+    editSlide(newIndex, state);
+  }
+
+  /// Reconcile selection/editing state after a slide was removed at
+  /// [removedIndex] (deck length is now [newLength]). Prevents stale indices
+  /// that would silently update the wrong slide or crash with a RangeError.
+  void handleSlideRemoved(int removedIndex, int newLength) {
+    if (_selectedSlideIndex == removedIndex) {
+      _selectedSlideIndex = -1;
+    } else if (removedIndex < _selectedSlideIndex) {
+      _selectedSlideIndex--;
+    }
+    if (_selectedSlideIndex >= newLength) _selectedSlideIndex = newLength - 1;
+
+    if (_editingIndex != null) {
+      if (_editingIndex == removedIndex) {
+        clearEditor();
+      } else if (removedIndex < _editingIndex!) {
+        _editingIndex = _editingIndex! - 1;
+      }
+    }
+    notifyListeners();
+  }
 
   Future<void> addOrUpdateSlide(BuildContext context) async {
     final rawHtml = htmlController.text.trim();
