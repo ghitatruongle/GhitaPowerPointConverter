@@ -53,3 +53,14 @@
 | Sau (T01): PDF (tổng) | — | — | — | 256 ms | 165314 B |
 | Sau (T01): HTML (tổng) | — | — | — | 89.8 ms | 22037 B |
 | Tham khảo | deck 20 slide, 4 nội dung duy nhất (lặp 5 lần), có ảnh PNG 128x96 | — | — | — | — |
+
+## beta1 — 2026-09-01 09:44:56
+
+| Đo lường | Parse | Build XML | Nén ZIP | Tổng | Dung lượng |
+|---|---|---|---|---|---|
+| Trước (v1.6.3): parse lẻ + ZIP mức 1, nén cả media | 121 ms | — (nằm trong Tổng) | — | 255 ms | 48138 B |
+| Sau (T01): parse 1 lần + ZIP mức 9, media stored | 3.0 ms | 23.3 ms | 29.3 ms | 58.3 ms | 45278 B |
+| Sau, lần 2 cùng phiên (cache đã ấm) | 0.0 ms | 8.1 ms | 19.4 ms | 30.9 ms | 45278 B |
+| Sau (T01): PDF (tổng) | — | — | — | 422 ms | 165314 B |
+| Sau (T01): HTML (tổng) | — | — | — | 114 ms | 17032 B |
+| Tham khảo | deck 20 slide, 4 nội dung duy nhất (lặp 5 lần), có ảnh PNG 128x96 | — | — | — | — |

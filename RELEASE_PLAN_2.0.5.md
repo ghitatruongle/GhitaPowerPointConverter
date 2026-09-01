@@ -3,8 +3,8 @@
 > Ngày lập: 2026-08-28 · Điểm xuất phát: commit `1b7b19d` (v2.0.1 stable), local = GitHub 100%, working tree sạch
 > Chủ đề v2.0.5: **"Rust Core + Trải nghiệm mượt"** — rust hóa có chọn lọc các đường nóng + lớp tính năng beta mới
 > Nguyên tắc xuyên suốt: **đo rồi mới sửa** · mọi module Rust có **Dart fallback** · zero-telemetry giữ nguyên
-> Cấu trúc: **mỗi phiên bản = n track, mỗi track = 10 phase đánh số** (chuẩn ROADMAP v2.0.0) — tổng **24 track × 10 phase = 240 phase**
-> Đánh số track liên tục T01→T24; phase của một track được trích là `Txx.p` (vd `T03.7`)
+> Cấu trúc: **mỗi phiên bản = n track, mỗi track = 10 phase đánh số** (chuẩn ROADMAP v2.0.0) — tổng **25 track × 10 phase = 250 phase**
+> Đánh số track liên tục T01→T25; phase của một track được trích là `Txx.p` (vd `T03.7`)
 
 ### ✅ KẾT QUẢ T01 (2026-08-29) — Track 1 hoàn thành, chưa commit (chờ duyệt)
 
@@ -80,7 +80,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 | Deck media 21,1 MB (text deflate + media stored) | **105–119 ms** | 132–142 ms |
 | Text-only 4,5 MB (42 XML × 70 KB) | 68,7–71,2 ms | **19,1–29,6 ms** |
 
-**Gate T02.7 — KHÔNG ĐẠT media ≥30% nhanh hơn** (Rust chậm 15–20%: FRB copy 21 MB media nuốt lợi thế; media stored nên Rust không nén thêm gì). Theo stop rule "đo rồi mới sửa": **giữ Dart làm mặc định** — Rust chỉ dùng khi user bật ở Settings (nơi nó thắng 2,4–3,6× trên deck nặng text). Đề xuất cho beta2 (T12.6): API streaming file→file bỏ copy — chỉ làm nếu profile chứng minh.
+**Gate T02.7 — KHÔNG ĐẠT media ≥30% nhanh hơn** (Rust chậm 15–20%: FRB copy 21 MB media nuốt lợi thế; media stored nên Rust không nén thêm gì). Theo stop rule "đo rồi mới sửa": **giữ Dart làm mặc định** — Rust chỉ dùng khi user bật ở Settings (nơi nó thắng 2,4–3,6× trên deck nặng text). Đề xuất cho beta2 (T13.6): API streaming file→file bỏ copy — chỉ làm nếu profile chứng minh.
 
 **Bằng chứng:** crate Rust test 2/2 · `test/zip_codec_test.dart` 6 test (routing/fallback/round-trip bit-perfect/corrupt) · integration probe **4/4** E2E trong app Windows thật — (1) DLL nạp thật + version trong Settings; (2) PPTX encode đầy đủ qua ghita_zip (`lastBackend=='rust'`) + **strict OOXML validation toàn gói** (mọi XML part parse được, Content_Types phủ đủ mọi part, mọi rels target resolve — gate tự động "không repair prompt"); (3) codec round-trip từng byte; (4) **`.ghita` bundle round-trip qua DLL thật**: saveProjectBundle(useEngineZip:true) → loadProjectBundle, manifest/slides/media bytes khớp + media extract đúng · **PPTX engine mở bằng PowerPoint 16.0 thật (COM): `OPEN_OK slides=1` — không repair prompt** (file tại build/t02_engine_probe.pptx) · `flutter analyze` 0 · suite **1023/1023 xanh** · benchmark tool khóa sàn chạy trong mỗi suite.
 
@@ -97,9 +97,9 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 
 | # | Phản hồi | Hướng xử lý | Ưu tiên |
 |---|---|---|---|
-| F1 | "Ảnh cũng thông báo hiện render, mãi không tự tắt" — sau khi thao tác thêm ảnh/xoá slide, một thông báo hiện không tự biến mất | **ĐÃ SỬA 2026-09-01**: gốc rễ THẬT = Flutter 3.44 mặc định `SnackBar.persist = (action != null)` — snackbar **có action → không bao giờ tự tắt** (chỉ tắt khi bấm action/close). Fix: `showAppSnackBar` ép `persist: false` + `clearSnackBars` (replace thật) → tự tắt đúng 3s, Undo vẫn bấm được; áp toàn bộ editor (delete/undo, delete-all, ~30 insert) + Ctrl+Delete (home) + Recent "Dự án mới"; 5 test helper + 1 regression xoá thật qua EditorShell; suite 1043/1043 | Cao ✅ |
-| F2 | Animation hạn chế | **v2.0.5-alpha — track T22** (giữa beta3 và stable) — animation per-element: entrance/emphasis/exit + trigger/delay/duration, Present preview + PPTX/HTML export chuẩn | Trung |
-| F3 | Mẫu PPT quá đơn giản (5 template hiện tại) | **v2.0.5-beta2, track T16** (xem mốc 3 bên dưới) — thiết kế lại 5 bộ template hiện đại + preview + i18n + test + ma trận, để vào stable v2.0.5 | Trung |
+| F1 | "Ảnh cũng thông báo hiện render, mãi không tự tắt" — sau khi thao tác thêm ảnh/xoá slide, một thông báo hiện không tự biến mất | **ĐÃ SỬA 2026-09-01**: gốc rễ THẬT = Flutter 3.44 mặc định `SnackBar.persist = (action != null)` — snackbar **có action → không bao giờ tự tắt** (chỉ tắt khi bấm action/close). Fix: `showAppSnackBar` ép `persist: false` + `clearSnackBars` (replace thật) → tự tắt đúng 3s, Undo vẫn bấm được; áp toàn bộ editor (delete/undo, delete-all, ~30 insert) + Ctrl+Delete (home) + Recent "Dự án mới"; 5 test helper + 1 regression xoá thật qua EditorShell; suite 1047/1047 | Cao ✅ |
+| F2 | Animation hạn chế | **v2.0.5-alpha — track T23** (giữa beta3 và stable) — animation per-element: entrance/emphasis/exit + trigger/delay/duration, Present preview + PPTX/HTML export chuẩn | Trung |
+| F3 | Mẫu PPT quá đơn giản (5 template hiện tại) | **v2.0.5-beta2, track T17** (xem mốc 3 bên dưới) — thiết kế lại 5 bộ template hiện đại + preview + i18n + test + ma trận, để vào stable v2.0.5 | Trung |
 
 ## PHẦN C — KIẾN TRÚC CHUNG (cả 6 mốc)
 
@@ -181,7 +181,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 
 ---
 
-# MỐC 2 — v2.0.5-BETA1: "Nâng cấp beta features + tối ưu + tăng tốc" (~4–5 ngày) — 5 TRACKS
+# MỐC 2 — v2.0.5-BETA1: "Nâng cấp beta features + tối ưu + tăng tốc" — **✅ HOÀN THÀNH 2026-09-01** (6 TRACKS T06–T11)
 
 > Cổng vào: re-run benchmark đối chiếu demo. Cổng ra beta2: ghita_image ≥3× · N2 gỡ flag · N3 dùng được · mọi tối ưu có số.
 
@@ -205,7 +205,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 3. UI thống kê + preview trước/sau dung lượng
 4. Gỡ chế độ "beta flag" thành tùy chọn thường trong Settings
 5. Cache đĩa ảnh đã tối ưu (không encode lại mỗi lần export)
-6. Test regression: chọn Dart → kết quả như demo bit-perfect
+6. Test regression: chọn Dart → **bit-perfect** giữ nguyên như demo; so sánh Rust vs Dart bằng **pixel-diff/PSNR + báo độ lệch byte** (không ép bit-perfect — encoder Rust `image` và Dart lệch vài bit do quantization JPEG)
 7. Test giữ mốc: deck 10 ảnh giảm ≥40%
 8. Manual checklist scaling 100/125/150%
 9. i18n + audit
@@ -245,19 +245,34 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 4. `flutter analyze` 0 + l10n audit CLEAN
 5. Mô phỏng matrix CI local
 6. Build installer + verify smoke
-7. Cài thử + checklist beta (N1/N2/N3)
+7. **Cài đè demo → beta1** (deck demo/project cũ mở được, prefs + API keys giữ nguyên) + cài thử + checklist beta (N1/N2/N3)
 8. Version 3 chỗ = `2.0.5-beta.1+5` + grep ALL
 9. CHANGELOG `[2.0.5-beta.1]` + commit `v2.0.5-beta1` sau CI GitHub xanh
 10. Desktop + SHA256 + memory
+
+## Track T11 — Sweep thông báo toàn app (Q; phản hồi người dùng 2026-09-01)
+
+> Gốc rễ phát hiện khi fix F1: Flutter 3.44 đổi mặc định `SnackBar.persist = (action != null)` — mọi snackbar **có action không tự tắt**; đồng thời còn ~100 chỗ `showSnackBar` thô ở các màn ngoài editor vẫn queue. Phải hoàn tất sweep để lỗi không tái sinh ở màn khác.
+
+1. Inventory: liệt kê toàn bộ `showSnackBar` thô còn lại ngoài helper (AI Chat, Home, Settings, Theme, Provider, Shortcuts, Export dialogs, sorter…) + đánh dấu chỗ có action/hardcode
+2. Chuyển toàn bộ sang `showAppSnackBar` (replace + `persist: false`), giữ duration hợp lý (1s notify, 3s undo, 4s error)
+3. Chuỗi hardcode EN/VI trong snackbar → l10n key (EN + VI .arb), viết lại mô tả nhất quán
+4. Thống nhất thói quen hiển thị: chỉ một snackbar mỗi lần, không xếp hàng toàn app
+5. Test widget cho từng nhóm ở lại: replace, auto-dismiss có/không action, action bấm được
+6. Regression EditorShell xóa slide + Delete All (giữ test sẵn từ F1)
+7. Grep gate: 0 `showSnackBar` thô + 0 chuỗi thông báo hardcode trong `lib/`
+8. i18n audit CLEAN + `flutter analyze` 0
+9. Check 0-TCP + smoke nhanh (thông báo không phát sinh netcode)
+10. CHANGELOG + đánh dấu F1 "đủ 100% toàn app"
 
 ---
 
 # MỐC 3 — v2.0.5-BETA2: "Sửa lỗi + hoàn thiện + rust hóa hoàn chỉnh" (~3–4 ngày) — 5 TRACKS
 
 > Cổng vào: không bug P1/P2 mở từ beta1. Cổng ra beta3: bảng bug trống P1/P2 · quyết định go/no-go htmlparse có số · fallback bền.
-> **Bổ sung phản hồi người dùng:** track **T16 — F3: Template refresh** (thiết kế lại 5 mẫu PPT) chạy song song trong mốc này; F2 (animation per-element) là mốc **v2.0.5-alpha (T22)** chạy sau beta3.
+> **Bổ sung phản hồi người dùng:** track **T17 — F3: Template refresh** (thiết kế lại 5 mẫu PPT) chạy song song trong mốc này; F2 (animation per-element) là mốc **v2.0.5-alpha (T23)** chạy sau beta3.
 
-## Track T16 — F3: Template refresh (phản hồi người dùng 2026-08-31)
+## Track T17 — F3: Template refresh (phản hồi người dùng 2026-08-31)
 
 1. Audit 5 template hiện tại (`assets/templates/`): layout, màu, font, độ dùng được thực tế
 2. Chốt bản thiết kế mới cho 5 bộ (Business/Creative/Academic/Marketing/Minimal) — 2–3 layout mỗi bộ
@@ -268,9 +283,9 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 7. Không regression: template cũ còn dùng được (fallback) + l10n audit CLEAN
 8. Ảnh minh hoạ/tài nguyên nhẹ (nén như bộ logo) — installer không phình
 9. Ứng dụng giữ đúng tính năng "recommended transitions + accent colors" theo bộ
-10. CHANGELOG + ma trận template mới (trước khi T19 chốt "ĐỦ 100%")
+10. CHANGELOG + ma trận template mới (trước khi T21 chốt "ĐỦ 100%")
 
-## Track T11 — Bug sweep tính năng beta (B)
+## Track T12 — Bug sweep tính năng beta (B)
 
 1. Manual checklist N1 DOCX trên scaling 100/125/150%
 2. Manual checklist N2 với deck ảnh thực tế (nhiều định dạng)
@@ -283,7 +298,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 9. Suite xanh ×2 sau mỗi fix
 10. Đóng bảng bug + CHANGELOG
 
-## Track T12 — Rust hóa hoàn chỉnh: go/no-go + ghita_zip chốt (RM)
+## Track T13 — Rust hóa hoàn chỉnh: go/no-go + ghita_zip chốt (RM)
 
 1. Profile parse HTML trên deck 100 slide: % tổng thời gian export
 2. Quyết định go/no-go `ghita_htmlparse` theo ngưỡng **≥15%** — ghi số vào kế hoạch
@@ -296,7 +311,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 9. Test hồi quy toàn bộ engine sau thay đổi
 10. CHANGELOG (kèm lý do có số nếu NO-GO — không rust hóa cho có)
 
-## Track T13 — Fallback & độ bền engine (RF)
+## Track T14 — Fallback & độ bền engine (RF)
 
 1. Test giả lập DLL hỏng / sai phiên bản → rơi Dart sạch sẽ
 2. Thông báo người dùng khi fallback + hướng dẫn xử lý
@@ -309,7 +324,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 9. Tài liệu kiến trúc fallback cho dev (README/mục dev)
 10. CHANGELOG
 
-## Track T14 — Hoàn thiện trải nghiệm N1/N2/N3 (B)
+## Track T15 — Hoàn thiện trải nghiệm N1/N2/N3 (B)
 
 1. Audit UI N1: tùy chọn rõ ràng, lỗi thân thiện, trạng thái export
 2. Audit UI N2: thống kê + preview nhất quán
@@ -322,7 +337,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 9. Widget test bổ sung phần polish
 10. CHANGELOG
 
-## Track T15 — Quality & Ship beta2 (Q+S)
+## Track T16 — Quality & Ship beta2 (Q+S)
 
 1. Coverage ratchet ≥52,5%
 2. Full suite xanh ×3
@@ -341,7 +356,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 
 > Cổng vào: beta2 đã chắc. Cổng ra stable: 0 bug mở · RAM/binary có số · ma trận tính năng "ĐỦ 100%".
 
-## Track T17 — Profiling RAM & tài nguyên (O)
+## Track T18 — Profiling RAM & tài nguyên (O)
 
 1. Chọn công cụ đo khả chuyển: benchmark tất định + script đo RSS (không dựa DevTools tương tác)
 2. Đo RAM export deck 100 slide: engine Rust vs Dart
@@ -354,7 +369,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 9. Đo lại ngay sau từng sửa
 10. Docs số liệu vào `tool/`
 
-## Track T18 — Binary & installer gọn (O/R)
+## Track T19 — Binary & installer gọn (O/R)
 
 1. Đo kích thước DLL + thành phần đóng góp
 2. Profile release Rust: `opt-level`, LTO, `strip`
@@ -367,7 +382,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 9. Docs cấu hình build Rust
 10. CHANGELOG
 
-## Track T19 — Sweep nâng cấp cài đè & tương thích (B)
+## Track T20 — Sweep nâng cấp cài đè & tương thích (B)
 
 1. Cài đè v2.0.1 → beta3: project cũ mở được
 2. Cài đè demo → beta3
@@ -380,7 +395,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 9. Sửa mọi lỗi lộ ra — test hồi quy riêng từng lỗi
 10. CHANGELOG
 
-## Track T20 — Ma trận tính năng "đủ và dùng được" (N/B)
+## Track T21 — Ma trận tính năng "đủ và dùng được" (N/B)
 
 1. Ma trận tính năng v2.0.5: N1/N2/N3 + engine Rust — trạng thái từng mục
 2. Rà mỗi tính năng đủ 4 lớp: UI + i18n + test + manual checklist
@@ -393,7 +408,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 9. 0-TCP lần cuối
 10. Báo cáo ma trận "ĐỦ 100%" (như Phụ lục A của v2.0.1)
 
-## Track T21 — Quality & Ship beta3 (Q+S)
+## Track T22 — Quality & Ship beta3 (Q+S)
 
 1. `flutter analyze` 0 + l10n audit CLEAN
 2. Full suite xanh ×3
@@ -401,7 +416,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 4. 0-TCP
 5. Mô phỏng matrix CI local (Rust + Flutter + drift MSVC)
 6. Build installer + verify smoke
-7. Cài thử + nâng cấp cài đè checklist (kết quả T18)
+7. Cài thử + nâng cấp cài đè checklist (kết quả T19)
 8. Version 3 chỗ = `2.0.5-beta.3+7` + grep ALL
 9. CHANGELOG `[2.0.5-beta.3]` + commit `v2.0.5-beta3` sau CI GitHub xanh
 10. Desktop + SHA256 + memory
@@ -412,9 +427,9 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 
 > Chạy SAU beta3, TRƯỚC stable (theo yêu cầu: alpha nằm giữa beta3 và stable; phiên bản cuối trước hardening cuối).
 > Cổng vào: beta3 xong (ma trận đủ). Cổng ra stable: animation preview chạy trong Present mode, PPTX/HTML export đúng, PowerPoint mở không repair; mọi hồi quy từ animation được fix xong trong mốc này.
-> **Chạy riêng track T22 — đánh số mốc: 1 demo · 2 beta1 · 3 beta2 · 4 beta3 · 5 alpha · 6 stable.**
+> **Chạy riêng track T23 — đánh số mốc: 1 demo · 2 beta1 · 3 beta2 · 4 beta3 · 5 alpha · 6 stable.**
 
-## Track T22 — F2: Animation theo phần tử (object-level animation)
+## Track T23 — F2: Animation theo phần tử (object-level animation)
 
 1. Khảo sát `animation_engine.dart` + `animation_ooxml.dart` hiện tại (transition deck/slide + preview) và mô hình PowerPoint (ECMA-376 p:anim: entrance/emphasis/exit, trigger, delay, duration)
 2. Thiết kế model mới: `SlideAnimation` (type: entrance/emphasis/exit, trigger: on-click/timing, delayMs, durationMs, selector phần tử HTML)
@@ -425,15 +440,15 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 7. HTML deck export: CSS keyframes + class hook từng phần tử (giữ mốc kích thước deck — tối ưu khóa sàn)
 8. PDF: render tĩnh (ghi rõ trong docs "animation không áp dụng trong PDF" + test)
 9. Test: unit model + OOXML chuẩn + E2E preview + regression deck cũ; i18n EN=VI toàn bộ chuỗi mới
-10. CHANGELOG + README mục "Animation theo phần tử" + ma trận (cập nhật map ở beta3 T20)
+10. CHANGELOG + README mục "Animation theo phần tử" + ma trận (cập nhật map ở beta3 T21)
 
 ---
 
 # MỐC 6 — v2.0.5 STABLE: "Hoàn thiện sạch sẽ, bản chính thức" (~2 ngày) — 2 TRACKS
 
-> Cổng vào: ma trận T19 "ĐỦ 100%". Cổng ra: tag `v2.0.5` + GitHub Release sau CI xanh 100%. **Freeze tính năng tuyệt đối.**
+> Cổng vào: ma trận T21 "ĐỦ 100%". Cổng ra: tag `v2.0.5` + GitHub Release sau CI xanh 100%. **Freeze tính năng tuyệt đối.**
 
-## Track T23 — Freeze & Hardening (Q)
+## Track T24 — Freeze & Hardening (Q)
 
 1. Ma trận tính năng chốt vs hiện trạng (kết luận ĐỦ/THIẾU từng mục — như F1 v2.0.1)
 2. Scope freeze: không nhận feature/fix mới ngoài bug chặn phát hành
@@ -446,7 +461,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 9. Manual checklist toàn bộ tính năng chính trên Windows thật
 10. Báo cáo sẵn sàng phát hành (go/no-go có bằng chứng)
 
-## Track T24 — Ship v2.0.5 (S)
+## Track T25 — Ship v2.0.5 (S)
 
 1. Version 3 chỗ = `2.0.5+8` / `MyAppVersion "2.0.5.8"` + `DisplayVersion "2.0.5+8"` / README `v2.0.5`
 2. Grep ALL `test/` + `tool/` cho version pin (bài học v2.0.1)
@@ -465,12 +480,12 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 
 ```
 Mốc 1   demo  (~4-5 ngày) : T01-T05      → RF + ghita_zip + N1 + N2(flag)
-Mốc 2   beta1 (~4-5 ngày) : T06-T10      → ghita_image + N2 đủ + N3 + tối ưu
-Mốc 3   beta2 (~3-4 ngày) : T11-T15 + T16 → bugfix + rust hoàn chỉnh + F3 template refresh
-Mốc 4   beta3 (~3-4 ngày) : T17-T21      → RAM/binary + cài đè + ma trận đủ
-Mốc 5   alpha (~5-6 ngày): T22           → F2 animation per-element (phản hồi người dùng)
-Mốc 6   stable(~2 ngày)  : T23-T24       → freeze/hardening + ship
-TỔNG: 24 track × 10 phase = 240 phase · ~24-27 ngày làm việc hiệu quả
+Mốc 2   beta1 (~5-6 ngày) : T06-T11      → ghita_image + N2 đủ + N3 + tối ưu + sweep thông báo toàn app
+Mốc 3   beta2 (~3-4 ngày) : T12-T16 + T17 → bugfix + rust hoàn chỉnh + F3 template refresh
+Mốc 4   beta3 (~3-4 ngày) : T18-T22      → RAM/binary + cài đè + ma trận đủ
+Mốc 5   alpha (~5-6 ngày): T23           → F2 animation per-element (phản hồi người dùng)
+Mốc 6   stable(~2 ngày)  : T24-T25       → freeze/hardening + ship
+TỔNG: 25 track × 10 phase = 250 phase · ~25-28 ngày làm việc hiệu quả
 ```
 
 ### Quy tắc dừng (áp cho mọi mốc)
@@ -488,4 +503,4 @@ TỔNG: 24 track × 10 phase = 240 phase · ~24-27 ngày làm việc hiệu qu�
 | Rust DLL → antivirus false positive | Thấp–TB | Kinh nghiệm Tauri: strip, nén; cân nhắc signing theo quy trình cũ |
 | Benchmark media lớn cho thấy Dart đủ nhanh | Trung bình | Bỏ T02 mục 5-6, giữ fallback; ghi lý do có số |
 | Scope creep tính năng beta | Cao | Freeze Phase 1 mỗi mốc; tính năng mới → backlog vòng sau |
-| Version pin Inno/pubspec/test drift | Đã từng gặp | T05/T10/T15/T20/T24 đều có bước grep ALL |
+| Version pin Inno/pubspec/test drift | Đã từng gặp | T05/T10/T16/T21/T25 đều có bước grep ALL |

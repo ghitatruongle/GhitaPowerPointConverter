@@ -1,4 +1,4 @@
-# MANUAL CHECKLIST — GhitaPPT v2.0.5-demo
+# MANUAL CHECKLIST — GhitaPPT v2.0.5-beta1
 
 > Cận kề thủ công trên máy Windows thật (dành cho người duyệt; phần tự động
 > đã nằm trong suite/probe — mục "Đã xác minh tự động" bên dưới).
@@ -27,7 +27,8 @@
 ## Đóng gói
 - [x] Cài bản Setup trên máy này: silent install + launch alive (mục trên)
 - [ ] Cài máy khác/sạch + gỡ cài: project/settings giữ nguyên — **chuyển beta1 manual pass**
-- [x] Bản cài đặt không có thông tin sai: Version 2.0.5-demo+4 (manifest release.json)
+- [x] Bản cài đặt không có thông tin sai: Version 2.0.5-beta.1+5 (manifest release.json)
+- [ ] **T07.8 — Kiểm tra scaling 100/125/150%:** xuất PPTX từ deck có ảnh (PNG lớn/PNG trong suốt/JPEG), bật "Tối ưu ảnh", chọn 3 mức chất lượng (150/300/600) trên cả 3 tỷ lệ màn hình — file không vỡ, thống kê "trước → sau (Y%)" hiện đúng, ảnh alpha vẫn PNG — **chuyển beta1 manual pass**
 
 ## Đã xác minh TỰ ĐỘNG (không cần thủ công)
 - Suite 1041/1041 xanh ×2 · analyze 0 · l10n audit CLEAN · coverage 51,9% (ex-l10n ≥ ratchet 51,5%)

@@ -38,3 +38,13 @@
 | Thời gian parse HTML (proxy tải slide đầu) | 23.425 ms |
 | CSS keyframes (bytes) | 4504 B |
 | Ảnh base64 nhúng (số lần) | 10 |
+
+## beta1 — 2026-09-01 09:44:55
+
+| Deck chuẩn 10 slide / 10 ảnh | Giá trị |
+|---|---|
+| Tổng dung lượng (UTF-8 bytes) | 20413 B |
+| Thời gian build + ghi file | 341.797 ms |
+| Thời gian parse HTML (proxy tải slide đầu) | 41.109 ms |
+| CSS keyframes (bytes) | 4504 B |
+| Ảnh base64 nhúng (số lần) | 10 |

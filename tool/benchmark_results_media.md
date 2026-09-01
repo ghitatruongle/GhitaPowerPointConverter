@@ -42,3 +42,11 @@
 | Deck media: 62 entries, 21.1 MB input | 117 ms | 21.1 MB |
 | Deck media — **ghita_zip (Rust)** | 138 ms | 21.1 MB |
 | Text-only: 4.5 MB input | Dart 71.2 ms | Rust 29.6 ms |
+
+## beta1 — 2026-09-01 09:44:56
+
+| Kịch bản | Nén ZIP | Kích thước |
+|---|---|---|
+| Deck media: 62 entries, 21.1 MB input | 140 ms | 21.1 MB |
+| Deck media — ghita_zip (Rust) | (bỏ qua — chưa bật GHITA_ZIP_RUST=1) | — |
+| Text-only: 4.5 MB input | Dart 80.0 ms | — |
