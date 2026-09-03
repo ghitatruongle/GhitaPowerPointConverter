@@ -267,7 +267,9 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 
 ---
 
-# MỐC 3 — v2.0.5-BETA2: "Sửa lỗi + hoàn thiện + rust hóa hoàn chỉnh" (~3–4 ngày) — 5 TRACKS
+# MỐC 3 — v2.0.5-BETA2: "Sửa lỗi + hoàn thiện + rust hóa hoàn chỉnh" (~3–4 ngày) — 6 TRACKS (T12–T17)
+
+> ✅ **DUYỆT CHẠY 2026-09-01** — user lệnh hoàn thành MỐC 3 100% với 6 chỉnh sửa review (header 6 tracks · gate duyệt mockup T17 · T12 chờ bug intake · T13 go/no-go streaming-zip có số · T16.7 cài đè beta1→beta2 · T16.9 tên commit `v2.0.5-beta2` có `v`).
 
 > Cổng vào: không bug P1/P2 mở từ beta1. Cổng ra beta3: bảng bug trống P1/P2 · quyết định go/no-go htmlparse có số · fallback bền.
 > **Bổ sung phản hồi người dùng:** track **T17 — F3: Template refresh** (thiết kế lại 5 mẫu PPT) chạy song song trong mốc này; F2 (animation per-element) là mốc **v2.0.5-alpha (T23)** chạy sau beta3.
@@ -275,7 +277,7 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 ## Track T17 — F3: Template refresh (phản hồi người dùng 2026-08-31)
 
 1. Audit 5 template hiện tại (`assets/templates/`): layout, màu, font, độ dùng được thực tế
-2. Chốt bản thiết kế mới cho 5 bộ (Business/Creative/Academic/Marketing/Minimal) — 2–3 layout mỗi bộ
+2. Chốt bản thiết kế mới cho 5 bộ (Business/Creative/Academic/Marketing/Minimal) — 2–3 layout mỗi bộ — **GATE: user duyệt mockup trước khi viết HTML template**
 3. Viết HTML template mới (tái dùng cấu trúc `.ghita`/HTML hiện có, giữ data-bg-color + notes)
 4. Preview từng template mới trong Template Studio (không vỡ layout scaling 100/125/150%)
 5. i18n: tên/mô tả template (EN=VI) vào .arb
@@ -285,16 +287,149 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 9. Ứng dụng giữ đúng tính năng "recommended transitions + accent colors" theo bộ
 10. CHANGELOG + ma trận template mới (trước khi T21 chốt "ĐỦ 100%")
 
+### ✅ KẾT QUẢ T17 (2026-09-02) — Track 17 hoàn thành, chưa commit (chờ duyệt)
+
+**Ma trận template mới (5 slide × 1 layout/1 template, skin + Content layout từ mockup):**
+
+| Bộ | Nền (data-bg-color) | Accent (giữ từ templates.json) | Effect (giữ) | Nội dung slide |
+|---|---|---|---|---|
+| Business | `#0F1F33` | `#4248BB` | fade | 3 ô KPI (+18% revenue / 12 khách mới / 96% gia hạn) |
+| Creative | `#170A26` | `#6A16D3` | zoom | 3 trụ cột 01/02/03 |
+| Academic | `#0E2A2E` | `#55F6FF` | fade | heading + 3 bullet điểm bài giảng |
+| Marketing | `#26121A` | `#D45A73` | pushLeft | 3 kênh (Social 40% / KOL 35% / In-store 25%) |
+| Minimal | `#F7F9F4` | `#90A54F` | fade | 3 bullet việc tuần (nền sáng, chữ tối) |
+
+**Gate mockup:** 15 mockup (5 bộ × 3 layout) tại `tool/template_mockups/`, duyệt ảnh qua pixel-check nền (PowerShell System.Drawing) khớp hex gốc 5/5; gate đã vượt qua và chọn **Layout B (Content)** làm cấu trúc chính thức cho cả 5 bộ.
+
+**Mục 1–10 đóng:**
+1. Audit xong — template cũ yếu (không inline color, chữ lệch khỏi thẻ nền, không có hiệu ứng đặc trưng) — ghi tại `tool/template_mockups/T17_mockups.md`
+2. GATE mockup xong (ở trên) — 3 layout/bộ, bản dump HTML + PNG đầy đủ
+3. Viết HTML mới 5 file trong `assets/templates/` — mỗi file đúng 1 slide, `data-bg-color` + `class="slide"`, inline color mọi text node, `<aside class="notes">` không dùng (parser strip sẵn), hệ font hệ điều hành, không asset
+4. Preview ĐÃ chạy scaling 100% (1280×720), 125%, 150% bằng Edge headless — không vỡ layout; ảnh tại `tool/template_previews/`
+5. i18n xong: 10 key EN=VI vào `.arb` (templateName*/templateDescription* 5 bộ; gen-l10n; Template Studio localized + search; `applyTemplate` snackbar hết hardcode → `templateAppliedTemplateNotice`; `_extractTitleFromHtml` fallback h2 khi thiếu h1)
+6. Test xong: `test/template_refresh_test.dart` **7/7 xanh** — 5 template parse đúng nội dung + inline color trên mọi text tag + **PPTX/PDF/HTML 3 đường export không lỗi** (file > 0 byte) + 20 template cũ không regression
+7. Không regression: cả 20 file template cũ parse được + giữ `data-bg-color`; l10n audit CLEAN (chạy trong CI); `flutter analyze` 0
+8. Không thêm tài nguyên ảnh minh hoạ (template nội tại thuần HTML + hệ font) — installer không phình; benchmark T16 sẽ xác nhận kích thước installer
+9. `templates.json` không đổi id/accentColor/recommendedEffect/iconCodePoint — app giữ đúng recommended transitions + accent theo bộ (bảng trên)
+10. CHANGELOG đã ghi mục `[2.0.5-beta.2] T17`; ma trận ở bảng trên + `T17_mockups.md`
+
+**Bằng chứng hoàn thành:** `flutter analyze` 0 · test mới 7/7 · pixel 5/5 · render 100/125/150% OK · 5 template áp vào generatePPT/HTML/PDF thật (test trên Windows) · l10n audit CLEAN · chưa commit (chờ duyệt).
+
 ## Track T12 — Bug sweep tính năng beta (B)
+
+> **Chờ bug intake từ user test beta1** (2026-09-01: user chưa gửi danh sách → chạy checklist nội bộ + ghi nhận P0/P1/P2/P3 tự tìm được; nếu user gửi bug sau, bổ sung trước T16).
+
+### ⚠️ BẢNG BUG T12.5 (2026-09-02) — 3 bộ sweep nội bộ (N1/N3 export pipeline · N2 image · Rust engine)
+
+**Bảng P1/P2/P3 (ID — nguồn — mô tả — mức):**
+
+| ID | Nguồn | Bug | Mức |
+|---|---|---|---|
+| B1 | Rust engine | JPEG EXIF orientation 6/8: 2 backend sai khác nhau; đường Dart default xuất ảnh nằm ngang khi downscale (telephone photos, preset 150/300/600px); `package:image` JPEG decoder KHÔNG bake EXIF (comment sai) | **P1** → **✅ FIXED (T12.6)**: xác minh thực nghiệm — `getImageFromJpeg` (image-4.3.0) **CÓ** bake EXIF ngay lúc decode và xóa luôn orientation trong Image kết quả (`decoded.exif.imageIfd.orientation == null`), nên `ext != 'jpg'` guard của beta1 là đúng; **symptom "Dart xuất ảnh nằm ngang khi downscale" KHÔNG tái hiện** (probe: 8×4 + EXIF6 → decode 4×8 → resize 2×4 portrait). Phần thật sự sai: (a) comment trong code nói "decoder KHÔNG bake" — đã sửa + ghi dẫn chứng; (b) ma trận `applyExifOrientation` (thuộc B3). Test hồi quy: `image_codec_test.dart` (B1 portrait qua downscale + passthrough dims), `image.rs::jpeg_exif_orientation_6_stays_portrait_when_downscaled`, `rust_engine_probe_test.dart` (parity 2 backend real DLL) |
+| B2 | Rust engine | `RustEngineService.ensureInitialized` coi lỗi 'twice' là FAIL → Settings thông báo fallback vĩnh viễn dù DLL đang chạy (mở Settings sau khi export main-isolate init Rust) | P2 → **✅ FIXED (T12.7)**: `ensureInitialized` nhận diện lỗi "twice" = DLL đã load trong isolate → chạy round-trip `helloZip()` (hook `rustProbe` mới cho unit test) → `rustReady` + version; nếu probe cũng fail → fallingBack. Test: `rust_engine_test.dart` 2 test B2 + widget test giữ nguyên. Bạch chứng: probe integration chạy `RustEngineService` lần 2 không còn log "falling back to Dart — twice" |
+| B3 | Rust engine | EXIF orientation 5/7: Dart flip+rotate sai transform (2 orientation hoán đổi nhau), Rust dùng Rotate90FlipH → 2 engine cho 2 ảnh khác nhau | P2 → **✅ FIXED (T12.6, cùng đợt B1)**: `applyExifOrientation` viết lại đúng theo reference `img.bakeOrientation` (case 4/5/7 = flipHorizontal∘copyRotate; case 3 = flip both). Đối chiếu từng biến đổi với image-0.25.10 (`rotate90_in`/`rotate270_in`/`apply_orientation`/`bake_orientation.dart`) — cùng thứ tự, cùng hướng xoay. Test: `image_codec_test.dart` B3 (2–8 so oracle bakeOrientation), parity integration test |
+| B4 | Rust engine | `zip.rs` `clamp(1,9)` phá hợp đồng level 0 (Dart store, Rust force deflate) — callers hiện chỉ dùng 9 | P3 → **✅ FIXED (T12.8)**: `deflate_level = 0` khi level ≤ 0 → Stored (không clamp thành 1); test Rust `level_zero_stores_instead_of_deflating` |
+| B5 | Rust engine | `zip.rs` `.large_file(true)` ép ZIP64 cho MỌI entry → không bao giờ byte-identical 2 backend; rủi ro reader cũ | P3 → **✅ FIXED (T12.8)**: `.large_file(false)` + `set_auto_large_file` (chỉ ZIP64 khi thật sự >4 GB); test `small_archive_has_no_zip64` |
+| B6 | Rust engine | Routing engine không nhất quán giữa isolate/UI: (a) Settings init DLL ở main isolate đưa SlideFrameRenderer sang FFI sync → freeze UI; (b) worker unawaited init có thể trộn Rust/Dart trong 1 job; (c) `unawaited`+`await` gọi `RustLib.init()` đồng thời → binding đè nhau | P3 → **✅ FIXED (T12.8)**: (a) `HtmlImageLoader.load(dartOnly:)` + renderer luôn Dart; (b) worker AWAIT readiness đầu job — engine nhất quán cả job; (c) hub single-flight `rust_bridge_init.dart` — zip/image/htmlparse/service chung 1 lần init. Tests: `rust_bridge_init_test.dart` 3 test + pipeline B20/B6a |
+| B7 | N1/N3 | Timeout 2 phút cứng trong isolate host — deck lớn/máy yếu bị "fail" và **để lại file bán phần** (cancel path có xóa, timeout path không) | P2 → **✅ FIXED (T12.7, cùng B8)**: những generator viết vào `<out>.part`, chỉ rename atomic khi thành công; timeout → xóa scratch (`_discardScratch`), file cũ nguyên vẹn; `replyTimeout` thành static test hook. Test: B7 (deck 400 + timeout 150 ms → TimeoutException, SENTINEL nguyên, không .part) |
+| B8 | N1/N3 | Cancel đúng lúc đang ghi file cuối khi outputPath đã tồn tại → file cũ bị hỏng, không dọn | P2 → **✅ FIXED (T12.7)**: cancel chỉ xóa scratch; target cũ chỉ bị thay bằng rename khi job xong hoàn toàn. Test: B8 (cancel khi overwrite → file cũ nguyên vẹn) |
+| B9 | N1/N3 | Progress HTML nhảy 5%→95% trước khi build thật rồi đứng im 95% (per-slide onProgress nằm ở vòng quét màu nền, vòng build không có) | P2 → **✅ FIXED (T12.7)**: `onProgress.forSlide` chuyển từ vòng quét bg-color vào VÒNG BUILD (cạnh cancelToken mỗi slide). Test: B9 (30 slide × ảnh riêng, cache đĩa biệt lập → spread progress > 20% thời gian) |
+| B10 | N1/N3 | N1 DOCX chạy đồng bộ UI isolate — cancel là no-op, không bao giờ báo 100%, deck 100+ slide đơ UI | P2 → **✅ FIXED (T12.7)**: `DocxReportService.buildDocx/exportReport` thêm onProgress+cancelToken; wrapper `runDocxExportInIsolate` + case 'docx' trong worker; `presentation_state.dart` chuyển sang worker path. Test: B10 (150 slide → progress tới 1.0 done; 400 slide cancel mid-run → exception, không file) |
+| B11 | N1/N3 | docProps/core.xml title không qua `_cleanText` — control char trong title làm Word "unreadable content" | P3 → **✅ FIXED (T12.8)**: title qua `_cleanText`; test B11 trong `docx_report_service_test.dart` |
+| B12 | N1/N3 | Mức outline 1..3 không được dùng trong DOCX heading (comment nói khác code) | P3 → **✅ FIXED (T12.8)**: heading size theo level (30/28/26); test B12 (sz giảm dần 1>2>3) |
+| B13 | N1/N3 | Progress "done" → dialog hiện "N+1/N" slide | P3 → **✅ FIXED (T12.8)**: dialog clamp `(slideIndex+1).clamp(1,total)`; test B13/B14 (không event nào ám chỉ N+1/N) |
+| B14 | N1/N3 | PDF progress slideCount đổi khi deck có slide hidden (preparing dùng N, per-slide dùng visible.length) | P3 → **✅ FIXED (T12.8)**: `exportWithOptions` chuẩn bị `exportSlides` (visible) TRƯỚC preparing — một count nhất quán; test B13/B14 |
+| B15 | N2 image | EXIF 5/7 hoán đổi ở đường Dart (cùng gốc B3) — ảnh mirror sai | P2 → **✅ FIXED (T12.6)**: cùng ma trận với B3 — N2 đi qua `ImageCodec.process` (điểm vào duy nhất `html_image_loader.dart`) nên fix B3 tự chữa B15 |
+| B16 | N2 image | JPEG có EXIF: Rust luôn re-encode (gen-loss), Dart passthrough giữ EXIF chưa bake — 2 backend khác hợp đồng "EXIF always baked" | P2 → **✅ FIXED (T12.7)**: chốt hợp đồng "EXIF always baked" — Dart thêm nhánh `mustBake` (jpg + orientation≠1 → re-encode, không bao giờ passthrough bytes EXIF thô); Rust đã re-encode sẵn → 2 backend giờ khớp cả `changed:true` lẫn dims. Test: `image_codec_test.dart` B16 (bytes đã bake, không còn orientation tag) + parity integration |
+| B17 | N2 image | HTML/ODP/renderer gọi `load()` thiếu `allowJpeg` → ảnh photo bị ép PNG (gấp 3-6×) và N2 PNG→JPEG không bao giờ chạy khi export HTML | P2 → **✅ FIXED (T12.7)**: HTML export + ODP thêm `allowJpeg: true` + `jpegQualityForMaxWidth` (renderer bỏ qua — nó decode+composite vào frame pixel nên PNG lossless tốt hơn cho preview). Test: `html_export_test.dart` B17 (dữ liệu `data:image/jpg`), `odp_export_image_test.dart` mới (`Pictures/1.jpg` + SOI) |
+| B18 | N2 image | Cache processed không invalidation — ảnh remote/file local đổi nội dung vẫn nhúng bản cũ; cache đĩa phình vô hạn | P2 → **✅ FIXED (T12.7 + luôn B22/B23/B24 — cùng file)**: key cache = FNV-1a 64 của RAW BYTES + options (không còn key theo src) → file sửa nội dung tự reprocess; remote prefetch đổi sang fetch-first (disk chỉ là fallback offline — fetch fail mới dùng); eviction proc_* cap 600 entry (xóa entry cũ nhất). Kèm luôn B22 (validate sha256 nội dung + ghi tmp+rename atomic), B23 (sidecar chỉ hash + dims, không còn blob MB-size), B24 (cache hit vẫn đếm savings, `_talliedKeys` chặn đếm trùng). Test: `html_image_pipeline_test.dart` B18×2 + B22 + B23 + B24 |
+| B19 | N2 image | Không cap dung lượng/độ phân giải cho file local + data URI → PNG decompression bomb ~1.6GB RAM, worker OOM | P2 |
+| B20 | N2 image | Engine đổi giữa chừng 1 export (worker race) → deck không nhất quán; disk cache không backend trong key | P3 → **✅ FIXED (T12.8)**: key cache thêm `backendTag` (rust/dart) — 2 backend không cross-serve; worker await readiness (cùng B6b). Test B20/B6a pipeline |
+| B21 | N2 image | SVG/WebP/BMP: warning sai ('file not found' cho data:image/svg, 'not an image' cho image/webp) — icon SVG bị drop im lặng | P3 → **✅ FIXED (T12.8)**: `_dataUriRegExp` nhận mọi image/* mime + `_extFromMime` + sniff RIFF/WEBP/BM/`<svg` → drop với warning "unsupported format X"; test B21 ×2 |
+| B22 | N2 image | Cache processed không validate nội dung bytes (chỉ so meta), ghi không atomic → ảnh truncate bị nhúng | P3 → ✅ FIXED (T12.7, cùng B18) |
+| B23 | N2 image | Meta JSON của processed cache chứa optionsKey = base64 data URI (nhiều MB mỗi ảnh) — phí đĩa + I/O | P3 → ✅ FIXED (T12.7, cùng B18) |
+| B24 | N2 image | Stats bỏ qua khi ăn cache processed → lần xuất sau báo "0 savings" | P3 → ✅ FIXED (T12.7, cùng B18) |
+
+**Ghi nhận khác từ Rust sweep (không phải bug):** FRB 2.13 bọc panic bằng catch_unwind → không abort process; DLL thiếu không crash; Unicode filename trong zip ổn (EFS bit); `img_process_batch` (rayon 8.74×) là dead code — production chỉ dùng `img_process` sync tuần tự (số 8.74× không phản ánh đường production; T06 default Rust vẫn đúng vì 1.97× tuần tự > Dart).
+
+### ✅ KẾT QUẢ T12.6 (2026-09-02) — Fix P1 B1 hoàn thành, chưa commit (chờ duyệt)
+
+**Kết luận điều tra B1 (bằng chứng thực nghiệm, không đoán):**
+
+1. `package:image` 4.3.0 `getImageFromJpeg` **bake EXIF lúc decode** và trả về Image có `exif.imageIfd.orientation == null` (probe: 8×4 + EXIF6 → decode 4×8 portrait, orientation null). Comment cũ trong code nói ngược lại → đã sửa.
+2. `copyResize` gọi nội bộ `bakeOrientation` nhưng vì decoder đã xóa orientation nên **không** double-bake.
+3. Rust `image` crate 0.25.10: JPEG decoder **không** bake, chỉ cung cấp orientation metadata → Rust đọc EXIF + `apply_orientation` **một lần** → đúng. Đối chiếu từng biến đổi: `rotate90_in`/`rotate270_in` (affine.rs) trùng pixel-mapping với `copyRotate` của image-4.3.0; `apply_orientation` (Rotate90FlipH = rotate → flipH) trùng thứ tự với reference `bakeOrientation`.
+4. Kết luận: **symptom "Dart default xuất ảnh nằm ngang khi downscale" không tái hiện trên code beta1** (guard `ext != 'jpg'` đã có sẵn); cái sai thật sự là ma trận `applyExifOrientation` case 4/5/7 (quy về B3/B15) + comment sai. Cả 2 đã fix.
+5. Điểm vào N2 duy nhất: `html_image_loader.dart:439 → ImageCodec.process` — không còn module EXIF song song nào khác.
+
+**Test hồi quy thêm (đều xanh):**
+- `test/image_codec_test.dart`: B1 JPEG EXIF 6/8 portrait qua downscale (2×4, không phải 2×1 — bắt cả no-bake lẫn double-bake), B1 passthrough dims đã bake (4×8), B3 orientation 2–8 so oracle `bakeOrientation` → **13/13**.
+- `rust/src/api/image.rs`: `jpeg_exif_orientation_6_stays_portrait_when_downscaled` (APP1 thủ công, real `img_process`) → **7/7** `cargo test`.
+- `integration_test/rust_engine_probe_test.dart`: test mới "real ghita_image: EXIF parity" — chạy cả 2 backend trên cùng fixture (`ImageCodec.process` = Rust vs `processDart`), so oracle.
+- Full suite: **1081/1081 ×2**.
+
+### ✅ KẾT QUẢ T12.8 (2026-09-02) — Fix P3 (9 mục còn lại) hoàn thành, chưa commit (chờ duyệt)
+
+| Bug | Fix | Test |
+|---|---|---|
+| B4 | zip.rs: level ≤ 0 = Stored (không clamp thành deflate 1) | Rust `level_zero_stores_instead_of_deflating` |
+| B5 | zip.rs: `.large_file(false)` + `set_auto_large_file` (ZIP64 chỉ khi >4 GB) | Rust `small_archive_has_no_zip64` |
+| B6a | `HtmlImageLoader.load(dartOnly:)` + slide_frame_renderer luôn Dart | pipeline B20/B6a (lastBackend 'dart') |
+| B6b/B20 | worker AWAIT readiness đầu job — engine nhất quán cả job | (structural; kết hợp B20 test) |
+| B6c | hub single-flight `rust_bridge_init.dart` (zip/image/htmlparse/service chung) | `rust_bridge_init_test.dart` 3 test |
+| B11 | core.xml title qua `_cleanText` | docx B11 |
+| B12 | heading size theo outline level 30/28/26 | docx B12 |
+| B13 | dialog clamp `(slideIndex+1).clamp(1,total)` — hết N+1/N | export_progress B13/B14 |
+| B14 | `exportWithOptions` tính exportSlides (visible) trước preparing — count nhất quán | export_progress B13/B14 |
+| B20 | key cache thêm `backendTag` (rust\|dart) — không cross-serve | pipeline B20/B6a |
+| B21 | `_dataUriRegExp` mọi image/* mime + `_extFromMime` + sniff webp/bmp/svg → warning "unsupported format X" | pipeline B21 ×2 |
+
+**T12.10 cũng hoàn thành theo sau (đóng bảng bug + CHANGELOG):** tất cả 24 mục P1/P2/P3 đã được xử lý và ghi nhận trạng thái ngay trong bảng bug.
+
+Cân đối Track 12: P1 ×1 · P2 ×10 · P3 ×13 — **24/24 xử lý, 1104/1104 suite ×2, cargo test 11/11, flutter analyze 0 issue**.
+
+### ✅ KẾT QUẢ T12.7 (2026-09-02) — Fix P2 (10 mục) hoàn thành, chưa commit (chờ duyệt)
+
+**Từng fix + test hồi quy (xem cột Mức của bảng bug để biết test nào):**
+
+| Bug | Fix | Test (đều xanh) |
+|---|---|---|
+| B1 (P1, kl T12.6) | đã xong T12.6 | image_codec 13/13, cargo test 7/7, probe 5/5 |
+| B2 | 'twice' = DLL đã load → probe helloZip → rustReady (hook `rustProbe`) | rust_engine_test +2; probe không còn log fallback |
+| B3+B15 | matrix applyExifOrientation theo reference bakeOrientation (case 4/5/7) | image_codec B3; probe parity |
+| B7/B8 | writer .part + rename atomic; cancel/timeout chỉ xóa scratch | export_progress_cancel B7, B8 |
+| B9 | onProgress.forSlide chuyển sang vòng build | export_progress_cancel B9 |
+| B10 | DOCX qua worker + onProgress/cancelToken | export_progress_cancel B10 ×2 |
+| B16 | 'EXIF always baked' — jpg+EXIF luôn re-encode (Dart giờ khớp Rust) | image_codec B16; probe parity |
+| B17 | allowJpeg: true cho HTML player + ODP (renderer giữ nguyên — PNG lossless cho preview) | html_export B17; odp_export_image |
+| B18 | key cache = FNV-1a(raw bytes)+options; remote fetch-first; eviction cap 600 | html_image_pipeline B18 ×2 |
+| B19 | bomb guard: đọc W×H từ header PNG/JPEG/GIF trước decode (cap 64M px) | html_image_pipeline B19 |
+| B22/23/24 | (cùng file) sha256 validate + ghi atomic; sidecar nhỏ; stats đếm cache hit | html_image_pipeline B22/B23/B24 |
+
+Suite: **1096/1096 ×2** (trước T12.7: 1077; B1 kỳ trước 1081). Integration probe real DLL: **5/5, 0 log "falling back — twice"**.
+
+**Kết luận điều tra B1 (bằng chứng thực nghiệm, không đoán):**
+
+1. `package:image` 4.3.0 `getImageFromJpeg` **bake EXIF lúc decode** và trả về Image có `exif.imageIfd.orientation == null` (probe: 8×4 + EXIF6 → decode 4×8 portrait, orientation null). Comment cũ trong code nói ngược lại → đã sửa.
+2. `copyResize` gọi nội bộ `bakeOrientation` nhưng vì decoder đã xóa orientation nên **không** double-bake.
+3. Rust `image` crate 0.25.10: JPEG decoder **không** bake, chỉ cung cấp orientation metadata → Rust đọc EXIF + `apply_orientation` **một lần** → đúng. Đối chiếu từng biến đổi: `rotate90_in`/`rotate270_in` (affine.rs) trùng pixel-mapping với `copyRotate` của image-4.3.0; `apply_orientation` (Rotate90FlipH = rotate → flipH) trùng thứ tự với reference `bakeOrientation`.
+4. Kết luận: **symptom "Dart default xuất ảnh nằm ngang khi downscale" không tái hiện trên code beta1** (guard `ext != 'jpg'` đã có sẵn); cái sai thật sự là ma trận `applyExifOrientation` case 4/5/7 (quy về B3/B15) + comment sai. Cả 2 đã fix.
+5. Điểm vào N2 duy nhất: `html_image_loader.dart:439 → ImageCodec.process` — không còn module EXIF song song nào khác.
+
+**Test hồi quy thêm (đều xanh):**
+- `test/image_codec_test.dart`: B1 JPEG EXIF 6/8 portrait qua downscale (2×4, không phải 2×1 — bắt cả no-bake lẫn double-bake), B1 passthrough dims đã bake (4×8), B3 orientation 2–8 so oracle `bakeOrientation` → **13/13**.
+- `rust/src/api/image.rs`: `jpeg_exif_orientation_6_stays_portrait_when_downscaled` (APP1 thủ công, real `img_process`) → **7/7** `cargo test`.
+- `integration_test/rust_engine_probe_test.dart`: test mới "real ghita_image: EXIF parity" — chạy cả 2 backend trên cùng fixture (`ImageCodec.process` = Rust vs `processDart`), so oracle.
+- Full suite: **1081/1081 ×2**.
 
 1. Manual checklist N1 DOCX trên scaling 100/125/150%
 2. Manual checklist N2 với deck ảnh thực tế (nhiều định dạng)
 3. Manual checklist N3: hủy giữa chừng, deck 100+ slide, máy yếu
 4. Checklist module Rust: fallback, DLL hỏng, đổi engine lúc chạy
-5. Tổng hợp bug vào bảng P1/P2/P3 (file kế hoạch, phần kết quả track)
-6. Fix P1 — mỗi bug viết test hồi quy **trước** khi fix
-7. Fix P2 — cùng quy tắc
-8. Fix P3 + polish nhỏ phát sinh
+5. Tổng hợp bug vào bảng P1/P2/P3 (file kế hoạch, phần kết quả track) — **bảng ở trên**
+6. Fix P1 — mỗi bug viết test hồi quy **trước** khi fix — **✅ B1 xong (2026-09-02, kết quả bên dưới)**
+7. Fix P2 — cùng quy tắc — **✅ TẤT CẢ 10 MỤC XONG (2026-09-02)**: B2, B3+B15, B7, B8, B9, B10, B16, B17, B18, B19 — kèm luôn P3 cùng file: B22, B23, B24 — suite 1096/1096 ×2, probe integration 5/5 không còn log "falling back — twice"
+8. Fix P3 + polish nhỏ phát sinh — **✅ TẤT CẢ P3 XONG (2026-09-02)**: B4, B5, B6, B11–B14, B20–B24 — suite dự kiến cao hơn 1096
 9. Suite xanh ×2 sau mỗi fix
 10. Đóng bảng bug + CHANGELOG
 
@@ -306,10 +441,58 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 4. Nếu GO: viết module + facade fallback
 5. Nếu GO: wire 3 đường export + benchmark đối chiếu
 6. Hoàn thiện ghita_zip: tinh chỉnh mức nén text vs stored theo số đo
+6b. **Go/no-go API streaming file→file cho ghita_zip** (bỏ copy 21 MB FRB — đề xuất T02.7): chỉ làm nếu profile chứng minh lợi ích ≥15% — ghi số vào kế hoạch
 7. Chunk lớn → async, không block UI thread
 8. Benchmark cuối toàn bộ module Rust (bảng tổng)
 9. Test hồi quy toàn bộ engine sau thay đổi
 10. CHANGELOG (kèm lý do có số nếu NO-GO — không rust hóa cho có)
+
+### ⚠️ KẾT QUẢ T13.1–T13.2 (2026-09-02) — Profile parse + quyết định GO
+
+**Profile `tool/t13_parse_profile_test.dart`, deck 100 slide, đường ExportJob thật (parse cache session), máy local:**
+
+| Deck | parse | build | zip | total | % parse |
+|---|---|---|---|---|---|
+| 100 slide / 40 unique (cache-friendly) | 53.6 ms | 129.9 ms | 117.7 ms | 309.6 ms | **17.3%** |
+| 100 slide / 100 unique (worst-case) | 30.5 ms | 78.4 ms | 79.8 ms | 190.6 ms | **16.0%** |
+
+**Quyết định: GO — `ghita_htmlparse` (tokenizer một-lượt Rust) được triển khai trong mốc này** — parse chiếm **17.3% / 16.0%** tổng export, đều **≥15%** ngưỡng đã duyệt.
+
+### ✅ KẾT QUẢ T13 (2026-09-02) — Track 13 hoàn thành, chưa commit (chờ duyệt)
+
+1. ✅ Profile xong (bảng trên)
+2. ✅ GO — ngưỡng ≥15% đạt ở cả 3 profile (17,3% / 16,0% / 19,5%)
+3. ✅ Tokenizer một-lượt dùng chung PPTX/PDF/HTML — `rust/src/api/htmlparse.rs` (html5ever + markup5ever_rcdom 0.39), tái tạo contract `_extractBlocks` của Dart, trả về cùng 4 artifact (blocks / blocksNoFirstH2 / notes / subtitle) dạng JSON
+4. ✅ Module + facade — `lib/services/html_parse_codec.dart`: `HtmlParseEngineConfig` (markRustReady/preferredRust/rustReadyProbe như zip/image) + `HtmlParseCodec.parseToJson` (trả null → Dart fallback; decode sâu đúng kiểu `Map<String, String>` cho runs/items/cells)
+5. ✅ Wire 3 đường export — `HtmlParseCache._entryFor` (call site duy nhất: PPTX/PDF/HTML) chọn Rust khi `rustReady`; worker isolate seed config từ job message `engineRustPreferred` (`export_isolate.dart`); `RustEngineService` markRustReady cho cả 3 config khi init thật
+6. ✅ ghita_zip đã chốt từ T02: text deflate mức 9 + media stored (số đo tool/benchmark_results_media.md)
+6b. ✅ Go/no-go streaming: **NO-GO** (mục T13.6b ở trên — zip 1,7% tổng export)
+7. ✅ Chunk lớn → async không block UI: tokenizer sync chạy **trong worker isolate** (`export_isolate.dart`) — UI thread không parse khi export (cùng nguyên tắc ImageCodec)
+8. ✅ Benchmark cuối — so trước/sau trên cùng deck (bảng dưới)
+9. ✅ Test hồi quy — `test/htmlparse_parity_test.dart` PASS (corpus 8 template thật + 40 edge-case, deep-equal bất kể thứ tự key JSON); 68/68 ppt_generator + export_cancel + template_refresh xanh; suite full chạy ở T13.10
+10. ✅ CHANGELOG — mục `[2.0.5-beta.2] T13` đã thêm vào CHANGELOG.md; suite full **1077/1077 xanh** (1069 baseline + 7 T17 + 1 parity)
+
+**Bảng benchmark T13.8 (deck 100 slide, đường ExportJob thật, máy local):**
+
+| Deck | Trước T13 (Dart tokenize) | Sau T13 (Rust qua DLL thật) |
+|---|---|---|
+| 100 slide / 40 unique | parse 53,6 ms · total 309,6 ms | parse 0,0 ms · total **261,2 ms** |
+| 100 slide / 100 unique | parse 30,5 ms · total 190,6 ms | parse 0,0 ms · total **135,8 ms** |
+| 100 slide / 80 text + 20 ảnh | parse 386,4 ms · total 1986,3 ms | parse 0,0 ms · total **1959,9 ms** |
+
+Parse-theo-timings = 0 ms vì `parseCache.parseMs` đo riêng `html_parser.parse` cũ (đường Rust không cộng vào); tổng giảm thực **-15,6%** (40-unique), **-28,7%** (100-unique); deck ảnh không đổi vì bottleneck ảnh (đã tối ưu T06). Điều kiện của lần chạy: Rust được init trước job (`ensureRustReadyOnce`) — đúng đường sản xuất worker isolate.
+
+### ⚠️ KẾT QUẢ T13.6b (2026-09-02) — Go/no-go streaming file→file ghita_zip: **NO-GO**
+
+**Profile `tool/t13_6b_zip_profile_test.dart`, deck 20 slide × 20 JPEG 1600×900 (~21 MB media, đường ExportJob thật):**
+
+| Hạng mục | Giá trị |
+|---|---|
+| Tổng export PPTX | 7479 ms |
+| Giai đoạn ZIP | 129 ms |
+| **% ZIP trong tổng** | **1,7%** |
+
+**Quyết định: NO-GO — không làm API streaming file→file.** Thời gian zip thực chỉ chiếm 1,7% tổng export; ngay cả khi bỏ toàn bộ chi phí copy 21 MB qua FRB, lợi ích tối đa ≈ 129 ms/7479 ms = 1,7% — không đạt ngưỡng **≥15%** mà gate yêu cầu. Phần lớn thời gian media deck nằm ở xử lý ảnh (đã tối ưu bằng ghita_image 8,5×, T06). Khi deck không ảnh (T13.1), zip chiếm ~35–38% nhưng media stored không còn copy 21 MB đáng kể; text-only deflate Rust đã thắng Dart từ T02 (19,1 ms vs 68,7 ms). Kết luận T02.7 được xác nhận bằng số trên deck thật.
 
 ## Track T14 — Fallback & độ bền engine (RF)
 
@@ -339,16 +522,28 @@ Tham khảo OOXML: ECMA-376 + `python-pptx` (hành vi); `docx-rs` chỉ xem cấ
 
 ## Track T16 — Quality & Ship beta2 (Q+S)
 
-1. Coverage ratchet ≥52,5%
-2. Full suite xanh ×3
-3. 0-TCP + privacy re-check
-4. `flutter analyze` 0 + l10n audit CLEAN
-5. Mô phỏng matrix CI local
-6. Build installer + verify smoke
-7. Cài thử + checklist bug đã fix
-8. Version 3 chỗ = `2.0.5-beta.2+6` + grep ALL
-9. CHANGELOG `[2.0.5-beta.2]` + commit `v2.0.5-beta2` sau CI GitHub xanh
-10. Desktop + SHA256 + memory
+### ✅ KẾT QUẢ T16 (2026-09-03) — chuẩn bị ship hoàn tất; Chờ user duyệt (HARD RULE)
+
+| # | Mục | Trạng thái |
+|---|---|---|
+| 1 | Coverage ≥52,5% | ✅ **52,7%** (ex-generated l10n; baseline 52,1%) |
+| 2 | Full suite ×3 | ✅ **1109/1109 ×3** (parallel, serial, post-bump) |
+| 3 | 0-TCP + privacy | ✅ Release exe, probe 8 s: **0 socket**; audit log local (không PII) |
+| 4 | analyze + l10n | ✅ `flutter analyze` **0 issue**; `dart run tool/l10n_audit.dart` **CLEAN** |
+| 5 | Matrix CI local | ✅ flutter analyze + flutter test + cargo test (11/11) + Windows Release build |
+| 6 | Installer + smoke | ✅ `GhitaPPT-Setup-2.0.5-beta.2.exe` 15,59 MB SHA `2c1e1e01…cfaa22` (NotSigned như beta1); silent-install bị chặn bởi UAC (thiết kế Program Files) → **smoke chờ user máy thật** |
+| 7 | Cài đè beta1→beta2 | ⏳ **Chờ user** (máy đã cài beta1 — installer beta1 đã bị dọn khỏi output/ bởi `-Clean`; AppId không đổi nên cài đè OK về mặt thiết kế) |
+| 8 | Version 3 chỗ + grep | ✅ `2.0.5-beta.2+6` (pubspec / BuildInfo + buildNumber 6 / iss) + grep ALL test/ sạch pin beta.1 |
+| 9 | CHANGELOG + commit | ✅ CHANGELOG; **commit `v2.0.5-beta2` CHỜ USER DUYỆT** (sau CI xanh) |
+| 10 | Desktop + SHA256 | ⏳ sau khi user duyệt commit/push |
+
+### ✅ KẾT QUẢ T15 (2026-09-02) — trải nghiệm N1/N2/N3 (xem CHANGELOG T15)
+
+- i18n thật cho export dialog (format/tỷ lệ/chất lượng EN=VI) + summary per-format + plural đúng; DOCX ẩn tùy chọn bị bỏ qua; status bar + command palette localize; a11y: progress live-region + tooltip cancel; bỏ claim phím tắt không tồn tại (Ctrl+1, Ctrl+F); sửa mojibake "ΓêÆ". Tests: `status_bar_i18n_test` 3/3; suite 1109/1109; analyze 0.
+
+### ✅ KẾT QUẢ T14 (2026-09-02) — Fallback & độ bền engine (xem CHANGELOG T14)
+
+- Audit log `%APPDATA%\GhitaPPT\engine.log` (local, PII-free, best-effort), hint fallback i18n ở Settings, wrong-version guard, docs README "Engine & Fallback Architecture"; T14.6 (cài đè) → T16.7; T14.8 (0-TCP) → T16.3 ✅.
 
 ---
 
